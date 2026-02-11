@@ -80,7 +80,13 @@ export function InviteDialog() {
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
+    <Dialog open={open} onOpenChange={(value) => {
+      if (value) {
+        setOpen(true)
+      } else {
+        handleClose()
+      }
+    }}>
       <DialogTrigger asChild>
         <Button className="bg-green-600 hover:bg-green-700">
           <Mail className="h-4 w-4 mr-2" />
