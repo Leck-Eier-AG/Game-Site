@@ -5,22 +5,22 @@
 See: .planning/PROJECT.md (updated 2026-02-11)
 
 **Core value:** Spieler können in Echtzeit gemeinsam klassische deutsche Spiele spielen — wie an einem echten Stammtisch, nur online.
-**Current focus:** Phase 1 - Foundation & Infrastructure
+**Current focus:** Phase 2 - Core Game Engine
 
 ## Current Position
 
-Phase: 1 of 5 (Foundation & Infrastructure)
-Plan: 6 of 6 in current phase
-Status: Phase complete - UAT ready
-Last activity: 2026-02-11 — Completed 01-06-PLAN.md (Gap closure: root route and invite dialog fixes)
+Phase: 2 of 5 (Core Game Engine)
+Plan: 1 of 5 in current phase
+Status: In progress
+Last activity: 2026-02-11 — Completed 02-01-PLAN.md (Foundation: GameRoom model, types, RNG, 3D deps)
 
-Progress: [██████████] 100% (6/6 Phase 1 plans complete)
+Progress: [████████████░░] 14% (7/50 total plans complete, 1/5 Phase 2 plans complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 6
-- Average duration: 18.5 min
+- Total plans completed: 7
+- Average duration: 16.3 min
 - Total execution time: 1.9 hours
 
 **By Phase:**
@@ -28,10 +28,11 @@ Progress: [██████████] 100% (6/6 Phase 1 plans complete)
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1 (Foundation) | 6/6 | 111 min | 18.5 min |
+| 2 (Game Engine) | 1/5 | 3 min | 3.0 min |
 
 **Recent Trend:**
-- Last 5 plans: 4min, 4min, 5min, 18min, 62min
-- Trend: Two quick plans (01-02, 01-03), then larger plans for admin dashboard (01-04), verification (01-05), and gap closure (01-06)
+- Last 5 plans: 4min, 5min, 18min, 62min, 3min
+- Trend: Quick foundation plan (02-01) establishing Phase 2 base types and dependencies
 
 *Updated after each plan completion*
 
@@ -62,6 +63,10 @@ Recent decisions affecting current work:
 - Admin self-protection (01-04): Prevent self-ban and ban of other admins
 - Delete root placeholder instead of redirecting (01-06): Let Next.js route groups work naturally
 - Preserve handleClose for state reset (01-06): Separation of concerns in dialog management
+- JSON game state storage (02-01): Store full game state as JSON in GameRoom.gameState for atomic updates
+- Cryptographic RNG server-side (02-01): Use node:crypto randomInt for CSPRNG dice rolling
+- Comprehensive type system upfront (02-01): Define all game types early to unblock parallel plans
+- Early 3D dependency installation (02-01): Install three.js and R3F in foundation to unblock Plan 02-02
 
 ### Pending Todos
 
@@ -73,11 +78,12 @@ None yet.
 - Resend API key needed for email sending in admin dashboard (graceful degradation: invite creation works, email is skipped)
 - Next.js 16 middleware deprecation warning (will need to rename to proxy.ts in future version)
 - USER-SETUP.md created for Phase 1: Resend and PostgreSQL configuration needed (see 01-USER-SETUP.md)
-- **Phase 1 UAT ready:** All foundation code complete, ready for full UAT re-test (3 direct fixes, 3 cascade unblocks)
+- **Database migration required:** GameRoom model added to schema but not pushed to database. Run `npx prisma db push` or `npx prisma migrate dev` before using game features
+- Test file ahead of implementation: kniffel-rules.test.ts exists but implementation doesn't (planned for future Phase 2 plan)
 
 ## Session Continuity
 
 Last session: 2026-02-11 (plan execution)
-Stopped at: Completed 01-06-PLAN.md (gap closure for UAT failures)
+Stopped at: Completed 02-01-PLAN.md (Phase 2 foundation setup)
 Resume file: None
-Next: Phase 1 complete - Ready for full UAT re-test or Phase 2 planning
+Next: Continue Phase 2 with Plan 02-02 (3D Dice Scene) or other parallel plans
