@@ -50,7 +50,7 @@ function DiceSceneInner({
 
   // Track when dice have settled
   useEffect(() => {
-    if (isRolling && !hasCalledComplete.current) {
+    if (isRolling) {
       setSettledCount(0)
       hasCalledComplete.current = false
 

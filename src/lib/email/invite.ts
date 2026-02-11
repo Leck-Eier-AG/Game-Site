@@ -8,12 +8,14 @@ interface SendInviteEmailParams {
   email: string
   token: string
   invitedBy: string
+  appUrl?: string
 }
 
 export async function sendInviteEmail({
   email,
   token,
   invitedBy,
+  appUrl: providedAppUrl,
 }: SendInviteEmailParams): Promise<{ success: boolean; error?: string }> {
   // Check if Resend is configured
   if (!resend || !process.env.RESEND_API_KEY) {
@@ -24,7 +26,7 @@ export async function sendInviteEmail({
   }
 
   const fromEmail = process.env.RESEND_FROM_EMAIL || 'noreply@yourdomain.com'
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+  const appUrl = providedAppUrl || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
   const inviteUrl = `${appUrl}/register?token=${token}`
 
   try {

@@ -30,7 +30,7 @@ export function SocketProvider({ children, userId }: SocketProviderProps) {
   const [isConnected, setIsConnected] = useState(false)
 
   useEffect(() => {
-    // Create socket instance
+    // Get the singleton socket instance
     const socket = getSocket()
     socketRef.current = socket
 
@@ -38,7 +38,6 @@ export function SocketProvider({ children, userId }: SocketProviderProps) {
     const onConnect = () => {
       console.log('Socket.IO connected')
       setIsConnected(true)
-      // Request state recovery on reconnect (PITFALL 6)
       socket.emit('request-state')
     }
 
@@ -66,17 +65,20 @@ export function SocketProvider({ children, userId }: SocketProviderProps) {
     socket.on('reconnect_attempt', onReconnectAttempt)
     socket.on('connect_error', onConnectError)
 
-    // Connect the socket
-    socket.connect()
+    // If already connected (singleton shared across routes), sync state
+    if (socket.connected) {
+      setIsConnected(true)
+    } else {
+      socket.connect()
+    }
 
-    // Cleanup on unmount
+    // Cleanup: unregister handlers but do NOT disconnect the singleton socket
     return () => {
       socket.off('connect', onConnect)
       socket.off('disconnect', onDisconnect)
       socket.off('reconnect', onReconnect)
       socket.off('reconnect_attempt', onReconnectAttempt)
       socket.off('connect_error', onConnectError)
-      socket.disconnect()
     }
   }, [])
 

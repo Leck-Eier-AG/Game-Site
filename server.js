@@ -307,8 +307,9 @@ app.prepare().then(() => {
   const httpServer = createServer(handler)
   const io = new Server(httpServer, {
     cors: {
-      origin: dev ? 'http://localhost:3000' : false,
+      origin: dev ? true : false,
       methods: ['GET', 'POST'],
+      credentials: true,
     },
     reconnection: true,
     reconnectionDelay: 1000,
@@ -387,6 +388,9 @@ app.prepare().then(() => {
     // Handle room creation
     socket.on('room:create', (settings, callback) => {
       try {
+        if (!settings || !settings.name) {
+          return callback({ success: false, error: 'Invalid room settings' })
+        }
         const room = roomManager.createRoom(
           socket.data.userId,
           socket.data.displayName,
@@ -414,17 +418,22 @@ app.prepare().then(() => {
         socket.data.displayName
       )
       if (result.error) {
-        callback({ error: result.error })
+        callback?.({ success: false, error: result.error })
+        socket.emit('room:error', { message: result.error })
         return
       }
       socket.join(roomId)
-      callback({ room: result.room, spectator: result.spectator || false })
-      io.to(roomId).emit('room:player-joined', {
-        userId: socket.data.userId,
-        displayName: socket.data.displayName,
-        spectator: result.spectator || false
-      })
-      sendSystemMessage(roomId, io, `${socket.data.displayName} ist beigetreten`)
+      callback?.({ success: true, room: result.room, spectator: result.spectator || false })
+      if (!result.rejoined) {
+        io.to(roomId).emit('room:player-joined', {
+          userId: socket.data.userId,
+          displayName: socket.data.displayName,
+          spectator: result.spectator || false
+        })
+        sendSystemMessage(roomId, io, `${socket.data.displayName} ist beigetreten`)
+      }
+      // Broadcast full room state to all players in the room
+      io.to(roomId).emit('room:update', result.room)
       io.emit('room:list-update', roomManager.getPublicRooms())
     })
 
@@ -435,6 +444,7 @@ app.prepare().then(() => {
       socket.leave(roomId)
       if (room) {
         io.to(roomId).emit('room:player-left', { userId: socket.data.userId })
+        io.to(roomId).emit('room:update', room)
         if (room.hostId !== socket.data.userId) {
           io.to(roomId).emit('room:new-host', { hostId: room.hostId })
         }
@@ -460,6 +470,15 @@ app.prepare().then(() => {
     })
 
     // Handle state recovery request
+    // Handle auth user info request
+    socket.on('auth:get-user', () => {
+      socket.emit('auth:success', {
+        userId: socket.data.userId,
+        displayName: socket.data.displayName,
+        role: socket.data.role,
+      })
+    })
+
     socket.on('request-state', () => {
       console.log(`State recovery requested by ${socket.data.userId}`)
       const userRooms = roomManager.getUserRooms(socket.data.userId)
@@ -538,6 +557,7 @@ app.prepare().then(() => {
         userId: socket.data.userId,
         isReady: player.isReady
       })
+      io.to(roomId).emit('room:update', room)
       callback?.({ success: true, isReady: player.isReady })
     })
 
@@ -633,6 +653,7 @@ app.prepare().then(() => {
           required: Math.ceil(result.players.length / 2)
         }
 
+        io.to(roomId).emit('room:update', room)
         io.to(roomId).emit('game:ended', {
           winner: result.winner,
           scores: result.players.map(p => ({
@@ -653,7 +674,7 @@ app.prepare().then(() => {
     })
 
     // Handle game start
-    socket.on('game:start', ({ roomId }, callback) => {
+    socket.on('game:start', ({ roomId, force }, callback) => {
       const room = roomManager.getRoom(roomId)
       if (!room) {
         callback?.({ error: 'Room not found' })
@@ -664,22 +685,33 @@ app.prepare().then(() => {
         return
       }
 
-      const readyPlayers = room.players.filter(p => p.isReady)
-      if (readyPlayers.length < 2) {
-        callback?.({ error: 'Need at least 2 ready players' })
-        return
+      let gamePlayers
+      if (force) {
+        // Force start: need at least 2 players total in the room
+        if (room.players.length < 2) {
+          callback?.({ error: 'Need at least 2 players' })
+          return
+        }
+        gamePlayers = room.players
+      } else {
+        const readyPlayers = room.players.filter(p => p.isReady)
+        if (readyPlayers.length < 2) {
+          callback?.({ error: 'Need at least 2 ready players' })
+          return
+        }
+        // Move non-ready players to spectators
+        const notReady = room.players.filter(p => !p.isReady)
+        for (const p of notReady) {
+          room.spectators.push(p.userId)
+          sendSystemMessage(roomId, io, `${p.displayName} schaut zu (nicht bereit)`)
+        }
+        gamePlayers = readyPlayers
       }
 
-      // Move non-ready players to spectators
-      const notReady = room.players.filter(p => !p.isReady)
-      for (const p of notReady) {
-        room.spectators.push(p.userId)
-        sendSystemMessage(roomId, io, `${p.displayName} schaut zu (nicht bereit)`)
-      }
-      room.players = readyPlayers
+      room.players = gamePlayers
 
       // Use imported createInitialState from state-machine.ts
-      const playerData = readyPlayers.map(p => ({
+      const playerData = gamePlayers.map(p => ({
         userId: p.userId,
         displayName: p.displayName
       }))
@@ -688,14 +720,44 @@ app.prepare().then(() => {
         afkThreshold: room.afkThreshold
       }
       room.gameState = createInitialState(playerData, settings)
+      room.gameState.phase = 'rolling'
+      room.gameState.turnStartedAt = Date.now()
       room.status = 'playing'
 
       sendSystemMessage(roomId, io, 'Das Spiel beginnt!')
+      io.to(roomId).emit('room:update', room)
       io.to(roomId).emit('game:state-update', { state: room.gameState, roomId })
       io.emit('room:list-update', roomManager.getPublicRooms())
 
       // Start turn timer
       startTurnTimer(roomId, io)
+      callback?.({ success: true })
+    })
+
+    // Handle game abort (host only)
+    socket.on('game:abort', ({ roomId }, callback) => {
+      const room = roomManager.getRoom(roomId)
+      if (!room) {
+        callback?.({ error: 'Room not found' })
+        return
+      }
+      if (room.hostId !== socket.data.userId) {
+        callback?.({ error: 'Not host' })
+        return
+      }
+
+      clearTurnTimer(roomId)
+      room.gameState = null
+      room.status = 'waiting'
+      // Reset all players to not ready
+      for (const p of room.players) {
+        p.isReady = false
+      }
+
+      sendSystemMessage(roomId, io, `${socket.data.displayName} hat das Spiel abgebrochen`)
+      io.to(roomId).emit('game:aborted')
+      io.to(roomId).emit('room:update', room)
+      io.emit('room:list-update', roomManager.getPublicRooms())
       callback?.({ success: true })
     })
 

@@ -52,6 +52,7 @@ export async function createInvite(
     }
 
     const { email, sendEmail } = validatedFields.data
+    const appUrl = (formData.get('origin') as string) || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
     // Check if user already exists
     const existingUser = await prisma.user.findUnique({
@@ -73,7 +74,6 @@ export async function createInvite(
 
     // If pending invite exists, return that link
     if (existingInvite) {
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
       return {
         success: true,
         token: existingInvite.token,
@@ -95,7 +95,6 @@ export async function createInvite(
       },
     })
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
     const link = `${appUrl}/register?token=${token}`
 
     // Send email asynchronously if requested (fire and forget)
@@ -104,6 +103,7 @@ export async function createInvite(
         email: email.toLowerCase(),
         token,
         invitedBy: admin.displayName,
+        appUrl,
       }).catch((error) => {
         console.error('Failed to send invite email:', error)
         // Don't fail the request if email fails

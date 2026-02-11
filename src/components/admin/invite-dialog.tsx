@@ -31,6 +31,7 @@ export function InviteDialog() {
     const formData = new FormData()
     formData.append('email', email)
     formData.append('sendEmail', 'true')
+    formData.append('origin', window.location.origin)
 
     const result = await createInvite(undefined, formData)
 
@@ -50,6 +51,7 @@ export function InviteDialog() {
     const formData = new FormData()
     formData.append('email', email)
     formData.append('sendEmail', 'false')
+    formData.append('origin', window.location.origin)
 
     const result = await createInvite(undefined, formData)
 

@@ -17,13 +17,11 @@ interface RoomData {
   status: 'waiting' | 'playing' | 'ended'
   isPrivate: boolean
   maxPlayers: number
-  currentPlayers: number
-  playerNames: string[]
+  players: { userId: string; displayName: string; isReady: boolean }[]
+  spectators: string[]
+  turnTimer?: number
+  afkThreshold?: number
   gameState?: GameState
-  settings?: {
-    turnTimer: number
-    afkThreshold: number
-  }
 }
 
 interface WaitingRoomProps {
@@ -37,8 +35,8 @@ export function WaitingRoom({ room, currentUserId, socket }: WaitingRoomProps) {
   const [copied, setCopied] = useState(false)
 
   const isHost = currentUserId === room.hostId
-  const players = room.gameState?.players || []
-  const spectators = room.gameState?.spectators || []
+  const players = room.players || []
+  const spectators = room.spectators || []
 
   // Calculate ready status
   const readyCount = players.filter(p => p.isReady).length
@@ -89,7 +87,7 @@ export function WaitingRoom({ room, currentUserId, socket }: WaitingRoomProps) {
                 <CardTitle className="text-2xl text-white">{room.name}</CardTitle>
                 <p className="text-sm text-gray-400">
                   {t('room.players', {
-                    count: room.currentPlayers,
+                    count: players.length,
                     max: room.maxPlayers
                   })}
                 </p>
@@ -111,14 +109,14 @@ export function WaitingRoom({ room, currentUserId, socket }: WaitingRoomProps) {
                 <p className="text-xs text-gray-400">{t('room.turnTimer')}</p>
                 <p className="text-lg font-semibold text-white">
                   {t('room.turnTimerSeconds', {
-                    seconds: room.settings?.turnTimer || 60
+                    seconds: room.turnTimer || 60
                   })}
                 </p>
               </div>
               <div>
                 <p className="text-xs text-gray-400">{t('room.afkThreshold')}</p>
                 <p className="text-lg font-semibold text-white">
-                  {room.settings?.afkThreshold || 2} {t('room.afkThreshold').split(' ')[1]}
+                  {room.afkThreshold || 2} {t('room.afkThreshold').split(' ')[1]}
                 </p>
               </div>
             </div>

@@ -2,46 +2,34 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import dynamic from 'next/dynamic'
 import { useSocket } from '@/lib/socket/provider'
 import { WaitingRoom } from '@/components/game/WaitingRoom'
+import { GameBoard } from '@/components/game/GameBoard'
 import type { GameState, RoomInfo } from '@/types/game'
 import { useTranslations } from 'next-intl'
-
-// Dynamically import GameBoard to prevent SSR issues with R3F
-const GameBoard = dynamic(
-  () => import('@/components/game/GameBoard').then(m => ({ default: m.GameBoard })),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex h-screen items-center justify-center bg-gradient-to-br from-gray-900 to-gray-800">
-        <div className="flex flex-col items-center gap-4">
-          <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-700 border-t-green-500" />
-          <p className="text-sm text-gray-400">Lade Spiel...</p>
-        </div>
-      </div>
-    )
-  }
-)
+import { Trophy, ArrowLeft } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 interface RoomData extends RoomInfo {
   gameState?: GameState
-  settings?: {
-    turnTimer: number
-    afkThreshold: number
-  }
+}
+
+interface GameEndData {
+  winner: string
+  scores: { userId: string; displayName: string; total: number }[]
 }
 
 export default function GameRoomPage() {
   const params = useParams()
   const router = useRouter()
-  const { socket, isConnected } = useSocket()
+  const { socket, isConnected, userId } = useSocket()
   const t = useTranslations()
 
   const roomId = params.roomId as string
   const [room, setRoom] = useState<RoomData | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [currentUserId, setCurrentUserId] = useState<string>('')
+  const [gameEnd, setGameEnd] = useState<GameEndData | null>(null)
 
   useEffect(() => {
     if (!socket || !isConnected) return
@@ -53,13 +41,6 @@ export default function GameRoomPage() {
     const handleRoomUpdate = (data: RoomData) => {
       setRoom(data)
       setError(null)
-    }
-
-    // Listen for game state updates
-    const handleGameStateUpdate = (data: { state: GameState; roomId: string }) => {
-      if (data.roomId === roomId) {
-        setRoom(prev => prev ? { ...prev, gameState: data.state } : null)
-      }
     }
 
     // Listen for player joined
@@ -79,35 +60,37 @@ export default function GameRoomPage() {
 
     // Listen for kicked
     const handleKicked = () => {
-      router.push('/lobby')
+      router.push('/')
     }
 
-    // Get current user ID from socket auth
-    const handleAuthSuccess = (data: { userId: string }) => {
-      setCurrentUserId(data.userId)
+    // Listen for game end
+    const handleGameEnded = (data: GameEndData) => {
+      setGameEnd(data)
+    }
+
+    // Listen for game abort
+    const handleGameAborted = () => {
+      setGameEnd(null)
     }
 
     socket.on('room:update', handleRoomUpdate)
-    socket.on('game:state-update', handleGameStateUpdate)
     socket.on('room:player-joined', handlePlayerJoined)
     socket.on('room:player-left', handlePlayerLeft)
     socket.on('room:error', handleError)
     socket.on('room:kicked', handleKicked)
-    socket.on('auth:success', handleAuthSuccess)
-
-    // Request current user info
-    socket.emit('auth:get-user')
+    socket.on('game:ended', handleGameEnded)
+    socket.on('game:aborted', handleGameAborted)
 
     // Cleanup: leave room on unmount
     return () => {
       socket.emit('room:leave', { roomId })
       socket.off('room:update', handleRoomUpdate)
-      socket.off('game:state-update', handleGameStateUpdate)
       socket.off('room:player-joined', handlePlayerJoined)
       socket.off('room:player-left', handlePlayerLeft)
       socket.off('room:error', handleError)
       socket.off('room:kicked', handleKicked)
-      socket.off('auth:success', handleAuthSuccess)
+      socket.off('game:ended', handleGameEnded)
+      socket.off('game:aborted', handleGameAborted)
     }
   }, [socket, isConnected, roomId, router])
 
@@ -129,12 +112,9 @@ export default function GameRoomPage() {
       <div className="flex h-screen items-center justify-center bg-gradient-to-br from-gray-900 to-gray-800">
         <div className="flex flex-col items-center gap-4">
           <p className="text-lg text-red-400">{error}</p>
-          <button
-            onClick={() => router.push('/lobby')}
-            className="rounded-lg bg-green-600 px-4 py-2 text-white hover:bg-green-700"
-          >
+          <Button onClick={() => router.push('/')} className="bg-green-600 hover:bg-green-700">
             {t('common.back')}
-          </button>
+          </Button>
         </div>
       </div>
     )
@@ -152,12 +132,80 @@ export default function GameRoomPage() {
     )
   }
 
+  // Game ended
+  if (gameEnd || room.status === 'ended') {
+    const scores = gameEnd?.scores || room.gameState?.players.map(p => ({
+      userId: p.userId,
+      displayName: p.displayName,
+      total: Object.values(p.scoresheet).reduce((sum, val) => sum + (val ?? 0), 0)
+    })) || []
+
+    const sorted = [...scores].sort((a, b) => b.total - a.total)
+    const winnerId = gameEnd?.winner || room.gameState?.winner
+
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-gray-900 to-gray-800 p-4">
+        <Card className="w-full max-w-md border-gray-700 bg-gray-800/80">
+          <CardHeader className="text-center">
+            <Trophy className="mx-auto h-16 w-16 text-yellow-400" />
+            <CardTitle className="text-3xl text-white">{t('game.gameOver')}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {sorted.map((player, index) => {
+              const isWinner = player.userId === winnerId
+              const isMe = player.userId === userId
+              return (
+                <div
+                  key={player.userId}
+                  className={`flex items-center justify-between rounded-lg p-3 ${
+                    isWinner
+                      ? 'bg-yellow-500/20 border border-yellow-500/40'
+                      : 'bg-gray-900/50'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className={`text-2xl font-bold ${
+                      index === 0 ? 'text-yellow-400' : index === 1 ? 'text-gray-300' : 'text-amber-700'
+                    }`}>
+                      #{index + 1}
+                    </span>
+                    <div>
+                      <p className={`font-semibold ${isWinner ? 'text-yellow-300' : 'text-white'}`}>
+                        {player.displayName}
+                        {isMe && ' (Du)'}
+                      </p>
+                      {isWinner && (
+                        <p className="text-xs text-yellow-400">{t('game.winner', { name: '' }).trim()}</p>
+                      )}
+                    </div>
+                  </div>
+                  <span className={`text-xl font-bold ${isWinner ? 'text-yellow-300' : 'text-gray-300'}`}>
+                    {player.total}
+                  </span>
+                </div>
+              )
+            })}
+
+            <Button
+              onClick={() => router.push('/')}
+              size="lg"
+              className="w-full bg-green-600 hover:bg-green-700 mt-4"
+            >
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Zurück zur Lobby
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   // Render based on game status
   if (room.status === 'waiting') {
     return (
       <WaitingRoom
         room={room}
-        currentUserId={currentUserId}
+        currentUserId={userId || ''}
         socket={socket}
       />
     )
@@ -168,37 +216,10 @@ export default function GameRoomPage() {
       <GameBoard
         gameState={room.gameState}
         roomId={roomId}
-        currentUserId={currentUserId}
+        currentUserId={userId || ''}
+        hostId={room.hostId}
         socket={socket}
       />
-    )
-  }
-
-  if (room.status === 'ended' && room.gameState) {
-    // Simple game over screen
-    const winner = room.gameState.players.reduce((prev, current) => {
-      const prevScore = Object.values(prev.scoresheet).reduce((sum, val) => sum + (val ?? 0), 0)
-      const currentScore = Object.values(current.scoresheet).reduce((sum, val) => sum + (val ?? 0), 0)
-      return currentScore > prevScore ? current : prev
-    })
-
-    return (
-      <div className="flex h-screen items-center justify-center bg-gradient-to-br from-gray-900 to-gray-800">
-        <div className="flex flex-col items-center gap-6">
-          <h1 className="text-4xl font-bold text-white">{t('game.gameOver')}</h1>
-          <p className="text-2xl text-green-400">
-            {t('game.winner', { name: winner.displayName })}
-          </p>
-          <div className="flex gap-4">
-            <button
-              onClick={() => router.push('/lobby')}
-              className="rounded-lg bg-green-600 px-6 py-3 text-white hover:bg-green-700"
-            >
-              {t('room.leave')}
-            </button>
-          </div>
-        </div>
-      </div>
     )
   }
 

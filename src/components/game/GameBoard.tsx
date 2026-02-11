@@ -3,32 +3,34 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslations } from 'next-intl'
 import type { Socket } from 'socket.io-client'
-import dynamic from 'next/dynamic'
 import { PlayerList } from './PlayerList'
 import { Scoresheet } from './Scoresheet'
 import { TurnTimer } from './TurnTimer'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Dice2D } from './Dice2D'
+import { LogOut, XCircle } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import type { GameState, ScoreCategory } from '@/types/game'
-
-// Dynamically import DiceScene to prevent SSR issues
-const DiceScene = dynamic(
-  () => import('@/components/3d/DiceScene').then(m => ({ default: m.DiceScene })),
-  { ssr: false }
-)
 
 interface GameBoardProps {
   gameState: GameState
   roomId: string
   currentUserId: string
+  hostId: string
   socket: Socket
 }
 
-export function GameBoard({ gameState, roomId, currentUserId, socket }: GameBoardProps) {
+export function GameBoard({ gameState, roomId, currentUserId, hostId, socket }: GameBoardProps) {
   const t = useTranslations()
+  const router = useRouter()
   const [isAnimating, setIsAnimating] = useState(false)
   const [localGameState, setLocalGameState] = useState(gameState)
   const prevDiceRef = useRef(gameState.dice)
+  const [confirmLeave, setConfirmLeave] = useState(false)
+  const [confirmAbort, setConfirmAbort] = useState(false)
+  const isHost = currentUserId === hostId
 
   // Update local game state when props change
   useEffect(() => {
@@ -106,19 +108,98 @@ export function GameBoard({ gameState, roomId, currentUserId, socket }: GameBoar
     setIsAnimating(false)
   }
 
+  const handleLeave = () => {
+    socket.emit('room:leave', { roomId })
+    router.push('/')
+  }
+
+  const handleAbort = () => {
+    socket.emit('game:abort', { roomId }, (response: { success?: boolean; error?: string }) => {
+      if (response?.error) {
+        toast.error(response.error)
+      }
+    })
+  }
+
   const canRoll = isMyTurn && localGameState.rollsRemaining > 0 && !isAnimating
   const canScore = isMyTurn && localGameState.rollsRemaining < 3 && !isAnimating
 
   return (
     <div className="flex min-h-screen flex-col bg-gradient-to-br from-gray-900 to-gray-800">
-      {/* Top Bar: Player List */}
+      {/* Top Bar: Player List + Actions */}
       <div className="border-b border-gray-700 p-4">
-        <PlayerList
-          players={localGameState.players}
-          currentPlayerIndex={localGameState.currentPlayerIndex}
-          currentUserId={currentUserId}
-          spectatorCount={localGameState.spectators.length}
-        />
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex-1">
+            <PlayerList
+              players={localGameState.players}
+              currentPlayerIndex={localGameState.currentPlayerIndex}
+              currentUserId={currentUserId}
+              spectatorCount={localGameState.spectators.length}
+            />
+          </div>
+          <div className="flex gap-2 shrink-0">
+            {isHost && (
+              confirmAbort ? (
+                <div className="flex gap-1">
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={handleAbort}
+                  >
+                    Abbrechen?
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setConfirmAbort(false)}
+                    className="border-gray-600"
+                  >
+                    Nein
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setConfirmAbort(true)}
+                  className="border-red-800 text-red-400 hover:bg-red-900/30"
+                >
+                  <XCircle className="h-4 w-4 mr-1" />
+                  Spiel abbrechen
+                </Button>
+              )
+            )}
+            {confirmLeave ? (
+              <div className="flex gap-1">
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={handleLeave}
+                >
+                  Verlassen?
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setConfirmLeave(false)}
+                  className="border-gray-600"
+                >
+                  Nein
+                </Button>
+              </div>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setConfirmLeave(true)}
+                className="border-gray-600 text-gray-400 hover:bg-gray-800"
+              >
+                <LogOut className="h-4 w-4 mr-1" />
+                Verlassen
+              </Button>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Main Game Area */}
@@ -126,8 +207,8 @@ export function GameBoard({ gameState, roomId, currentUserId, socket }: GameBoar
         {/* Left: Dice Scene (~60% on desktop) */}
         <div className="flex flex-1 flex-col gap-4 lg:w-3/5">
           <Card className="flex-1 overflow-hidden border-gray-700 bg-gray-800/50">
-            <div className="h-full min-h-[400px]">
-              <DiceScene
+            <div className="min-h-[200px]">
+              <Dice2D
                 dice={localGameState.dice}
                 keptDice={localGameState.keptDice}
                 isRolling={isAnimating}
