@@ -32,7 +32,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   5. Admin can ban and unban users
   6. All UI labels and messages display in German
   7. Interface is responsive and usable on mobile devices
-**Plans**: 5 plans
+**Plans**: 6 plans
 
 Plans:
 - [x] 01-01-PLAN.md — Project scaffolding, database schema, and core auth library (Complete: 2026-02-11)
@@ -40,6 +40,7 @@ Plans:
 - [x] 01-03-PLAN.md — App shell with sidebar and WebSocket infrastructure (Complete: 2026-02-11)
 - [x] 01-04-PLAN.md — Admin dashboard with invite management and ban/unban (Complete: 2026-02-11)
 - [ ] 01-05-PLAN.md — Full flow verification checkpoint
+- [ ] 01-06-PLAN.md — UAT gap closure: root page shadow fix and invite dialog fix
 
 ### Phase 2: Core Game Engine (Kniffel MVP)
 **Goal**: Players can play Kniffel in real-time at shared tables
@@ -116,7 +117,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation & Infrastructure | 4/5 | In progress | - |
+| 1. Foundation & Infrastructure | 4/6 | In progress | - |
 | 2. Core Game Engine (Kniffel MVP) | 0/TBD | Not started | - |
 | 3. Virtual Currency & Betting | 0/TBD | Not started | - |
 | 4. Additional Games | 0/TBD | Not started | - |
@@ -124,4 +125,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 ---
 *Roadmap created: 2026-02-11*
-*Last updated: 2026-02-11 (Plan 01-04 complete)*
+*Last updated: 2026-02-11 (UAT gap closure plan 01-06 added)*
