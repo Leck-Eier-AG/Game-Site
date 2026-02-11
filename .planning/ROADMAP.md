@@ -39,8 +39,8 @@ Plans:
 - [x] 01-02-PLAN.md — Auth pages (admin setup, login, invite registration) (Complete: 2026-02-11)
 - [x] 01-03-PLAN.md — App shell with sidebar and WebSocket infrastructure (Complete: 2026-02-11)
 - [x] 01-04-PLAN.md — Admin dashboard with invite management and ban/unban (Complete: 2026-02-11)
-- [ ] 01-05-PLAN.md — Full flow verification checkpoint
-- [ ] 01-06-PLAN.md — UAT gap closure: root page shadow fix and invite dialog fix
+- [x] 01-05-PLAN.md — Full flow verification checkpoint (Complete: 2026-02-11)
+- [x] 01-06-PLAN.md — UAT gap closure: root page shadow fix and invite dialog fix (Complete: 2026-02-11)
 
 ### Phase 2: Core Game Engine (Kniffel MVP)
 **Goal**: Players can play Kniffel in real-time at shared tables
@@ -58,10 +58,10 @@ Plans:
 **Plans**: 11 plans
 
 Plans:
-- [ ] 02-01-PLAN.md — Database schema, game types, 3D dependencies, German translations
-- [ ] 02-02-PLAN.md — Kniffel scoring algorithm (TDD)
+- [x] 02-01-PLAN.md — Database schema, game types, 3D dependencies, German translations (Complete: 2026-02-11)
+- [x] 02-02-PLAN.md — Kniffel scoring algorithm (TDD) (Complete: 2026-02-11)
 - [ ] 02-03-PLAN.md — Game state machine (TDD)
-- [ ] 02-04-PLAN.md — Room lifecycle server handlers (Socket.IO)
+- [x] 02-04-PLAN.md — Room lifecycle server handlers (Socket.IO) (Complete: 2026-02-11)
 - [ ] 02-05-PLAN.md — 3D dice scene (React Three Fiber + Rapier physics)
 - [ ] 02-06-PLAN.md — Lobby UI with room browsing and creation
 - [ ] 02-07-PLAN.md — Game room page with scoresheet and turn timer
@@ -127,8 +127,8 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation & Infrastructure | 4/6 | In progress | - |
-| 2. Core Game Engine (Kniffel MVP) | 0/11 | Planned | - |
+| 1. Foundation & Infrastructure | 6/6 | Complete | 2026-02-11 |
+| 2. Core Game Engine (Kniffel MVP) | 3/11 | In progress | - |
 | 3. Virtual Currency & Betting | 0/TBD | Not started | - |
 | 4. Additional Games | 0/TBD | Not started | - |
 | 5. Polish & Community | 0/TBD | Not started | - |
