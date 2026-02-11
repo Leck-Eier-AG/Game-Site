@@ -55,7 +55,7 @@ Plans:
   6. Players can send text messages to others at their table
   7. Inactive players are automatically removed from room after timeout
   8. Empty rooms are cleaned up automatically
-**Plans**: 10 plans
+**Plans**: 11 plans
 
 Plans:
 - [ ] 02-01-PLAN.md — Database schema, game types, 3D dependencies, German translations
@@ -66,8 +66,9 @@ Plans:
 - [ ] 02-06-PLAN.md — Lobby UI with room browsing and creation
 - [ ] 02-07-PLAN.md — Game room page with scoresheet and turn timer
 - [ ] 02-08-PLAN.md — Table chat and spectator mode
-- [ ] 02-09-PLAN.md — Server game loop, AFK detection, auto-play, rematch
-- [ ] 02-10-PLAN.md — Full game verification checkpoint
+- [ ] 02-09-PLAN.md — Core game loop: server handlers using state machine and scoring imports
+- [ ] 02-10-PLAN.md — Turn timers, auto-play, AFK detection, rematch voting, results UI
+- [ ] 02-11-PLAN.md — Full game verification checkpoint
 
 ### Phase 3: Virtual Currency & Betting
 **Goal**: Users have virtual wallet that enables optional room betting
@@ -127,11 +128,11 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation & Infrastructure | 4/6 | In progress | - |
-| 2. Core Game Engine (Kniffel MVP) | 0/10 | Planned | - |
+| 2. Core Game Engine (Kniffel MVP) | 0/11 | Planned | - |
 | 3. Virtual Currency & Betting | 0/TBD | Not started | - |
 | 4. Additional Games | 0/TBD | Not started | - |
 | 5. Polish & Community | 0/TBD | Not started | - |
 
 ---
 *Roadmap created: 2026-02-11*
-*Last updated: 2026-02-11 (Phase 2 planned: 10 plans in 5 waves)*
+*Last updated: 2026-02-11 (Phase 2 revised: 11 plans in 5 waves)*
