@@ -4,9 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "node server.js",
+    "dev": "tsx server.js",
     "build": "next build",
-    "start": "NODE_ENV=production node server.js",
+    "start": "NODE_ENV=production tsx server.js",
     "lint": "next lint",
     "test": "jest"
   },
@@ -25,6 +25,7 @@
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-dropdown-menu": "^2.1.16",
     "@radix-ui/react-label": "^2.1.8",
+    "@radix-ui/react-select": "^2.2.6",
     "@radix-ui/react-separator": "^1.1.8",
     "@radix-ui/react-slot": "^1.2.4",
     "@react-three/drei": "^10.7.7",
@@ -67,6 +68,7 @@
     "jest": "^30.2.0",
     "jose": "^6.1.3",
     "ts-jest": "^29.4.6",
+    "tsx": "^4.21.0",
     "zod": "^4.3.6"
   }
 }

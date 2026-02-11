@@ -6,6 +6,9 @@ import next from 'next'
 import { Server } from 'socket.io'
 import { jwtVerify } from 'jose'
 import { PrismaClient } from '@prisma/client'
+import { applyAction, createInitialState } from './src/lib/game/state-machine.js'
+import { autoPickCategory, calculateScore, calculateTotalScore } from './src/lib/game/kniffel-rules.js'
+import { rollDice } from './src/lib/game/crypto-rng.js'
 
 const dev = process.env.NODE_ENV !== 'production'
 const hostname = 'localhost'
@@ -171,6 +174,122 @@ class RoomManager {
 
 const roomManager = new RoomManager()
 
+// Turn timer management
+const turnTimers = new Map() // roomId -> timeout
+
+function startTurnTimer(roomId, io) {
+  clearTurnTimer(roomId)
+  const room = roomManager.getRoom(roomId)
+  if (!room || !room.gameState || room.gameState.phase === 'ended') return
+
+  const timeout = setTimeout(() => {
+    autoPlay(roomId, io)
+  }, room.gameState.turnDuration * 1000)
+
+  turnTimers.set(roomId, timeout)
+}
+
+function resetTurnTimer(roomId, io) {
+  startTurnTimer(roomId, io) // clear and restart
+}
+
+function clearTurnTimer(roomId) {
+  const timer = turnTimers.get(roomId)
+  if (timer) {
+    clearTimeout(timer)
+    turnTimers.delete(roomId)
+  }
+}
+
+// Auto-play on timeout using imported autoPickCategory
+function autoPlay(roomId, io) {
+  const room = roomManager.getRoom(roomId)
+  if (!room || !room.gameState || room.gameState.phase === 'ended') return
+  const gs = room.gameState
+  const currentPlayer = gs.players[gs.currentPlayerIndex]
+
+  // If player hasn't rolled yet, roll for them via state machine
+  let state = gs
+  if (state.rollsRemaining === 3) {
+    const newDice = rollDice(5)
+    const rollAction = { type: 'ROLL_DICE', keptDice: [false, false, false, false, false], newDice }
+    const rollResult = applyAction(state, rollAction, currentPlayer.userId)
+    if (!(rollResult instanceof Error)) {
+      state = rollResult
+    }
+  }
+
+  // Pick best category using imported autoPickCategory from kniffel-rules.js
+  const bestCategory = autoPickCategory(state.dice, currentPlayer.scoresheet)
+
+  // Apply scoring via state machine
+  const scoreAction = { type: 'CHOOSE_CATEGORY', category: bestCategory }
+  const result = applyAction(state, scoreAction, currentPlayer.userId)
+
+  if (result instanceof Error) {
+    // Fallback: something went wrong, log and skip turn
+    console.error('Auto-play failed:', result.message)
+    return
+  }
+
+  room.gameState = result
+  currentPlayer.consecutiveInactive += 1
+
+  const score = calculateScore(bestCategory, state.dice)
+  sendSystemMessage(roomId, io, `Auto-Zug: ${currentPlayer.displayName} -> ${bestCategory} (${score} Punkte)`)
+
+  // Check AFK threshold
+  if (currentPlayer.consecutiveInactive >= room.afkThreshold) {
+    kickPlayerAFK(room, roomId, currentPlayer, io)
+    return
+  }
+
+  // Check if game ended
+  if (result.phase === 'ended') {
+    room.status = 'ended'
+    clearTurnTimer(roomId)
+    const winnerPlayer = result.players.find(p => p.userId === result.winner)
+    const winnerTotal = calculateTotalScore(winnerPlayer.scoresheet)
+    sendSystemMessage(roomId, io, `Spiel beendet! Gewinner: ${winnerPlayer.displayName} (${winnerTotal} Punkte)`)
+    room.rematchVotes = { votedYes: [], votedNo: [], total: result.players.length, required: Math.ceil(result.players.length / 2) }
+    io.to(roomId).emit('game:ended', { winner: result.winner, scores: result.players.map(p => ({ userId: p.userId, displayName: p.displayName, total: calculateTotalScore(p.scoresheet) })) })
+    io.emit('room:list-update', roomManager.getPublicRooms())
+  } else {
+    result.turnStartedAt = Date.now()
+    startTurnTimer(roomId, io)
+  }
+
+  io.to(roomId).emit('game:state-update', { state: result, roomId })
+}
+
+// AFK kick
+function kickPlayerAFK(room, roomId, player, io) {
+  sendSystemMessage(roomId, io, `${player.displayName} wurde entfernt (AFK)`)
+  room.gameState.players = room.gameState.players.filter(p => p.userId !== player.userId)
+  room.players = room.players.filter(p => p.userId !== player.userId)
+
+  // If only 1 player left, they win by default
+  if (room.gameState.players.length < 2) {
+    room.gameState.phase = 'ended'
+    room.gameState.winner = room.gameState.players[0]?.userId || null
+    room.status = 'ended'
+    clearTurnTimer(roomId)
+    const winner = room.gameState.players[0]
+    if (winner) {
+      sendSystemMessage(roomId, io, `${winner.displayName} gewinnt! Alle anderen Spieler waren AFK.`)
+    }
+    io.to(roomId).emit('game:ended', { winner: room.gameState.winner, scores: room.gameState.players.map(p => ({ userId: p.userId, displayName: p.displayName, total: calculateTotalScore(p.scoresheet) })) })
+    return
+  }
+
+  // Adjust currentPlayerIndex if needed
+  if (room.gameState.currentPlayerIndex >= room.gameState.players.length) {
+    room.gameState.currentPlayerIndex = 0
+  }
+
+  io.to(roomId).emit('room:player-kicked', { userId: player.userId, reason: 'AFK' })
+}
+
 // Parse cookie string to extract specific cookie value
 function parseCookie(cookieString, name) {
   if (!cookieString) return null
@@ -235,7 +354,7 @@ app.prepare().then(() => {
   })
 
   // Helper function to send system messages
-  function sendSystemMessage(roomId, content) {
+  function sendSystemMessage(roomId, io, content) {
     const room = roomManager.getRoom(roomId)
     if (!room) return
 
@@ -299,13 +418,13 @@ app.prepare().then(() => {
         displayName: socket.data.displayName,
         spectator: result.spectator || false
       })
-      sendSystemMessage(roomId, `${socket.data.displayName} ist beigetreten`)
+      sendSystemMessage(roomId, io, `${socket.data.displayName} ist beigetreten`)
       io.emit('room:list-update', roomManager.getPublicRooms())
     })
 
     // Handle room leave
     socket.on('room:leave', ({ roomId }, callback) => {
-      sendSystemMessage(roomId, `${socket.data.displayName} hat den Raum verlassen`)
+      sendSystemMessage(roomId, io, `${socket.data.displayName} hat den Raum verlassen`)
       const room = roomManager.leaveRoom(roomId, socket.data.userId)
       socket.leave(roomId)
       if (room) {
@@ -329,7 +448,7 @@ app.prepare().then(() => {
       const targetName = targetPlayer?.displayName || 'Spieler'
       roomManager.leaveRoom(roomId, targetUserId)
       io.to(roomId).emit('room:player-kicked', { userId: targetUserId })
-      sendSystemMessage(roomId, `${targetName} wurde entfernt`)
+      sendSystemMessage(roomId, io, `${targetName} wurde entfernt`)
       io.emit('room:list-update', roomManager.getPublicRooms())
       callback?.({ success: true })
     })
@@ -400,7 +519,7 @@ app.prepare().then(() => {
       console.log(`Client disconnected: ${socket.data.userId}`)
       const affectedRooms = roomManager.removeUserFromAllRooms(socket.data.userId)
       for (const room of affectedRooms) {
-        sendSystemMessage(room.id, `${socket.data.displayName} hat den Raum verlassen`)
+        sendSystemMessage(room.id, io, `${socket.data.displayName} hat den Raum verlassen`)
         io.to(room.id).emit('room:player-left', { userId: socket.data.userId })
       }
       io.emit('room:list-update', roomManager.getPublicRooms())
