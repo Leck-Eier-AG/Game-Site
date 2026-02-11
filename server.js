@@ -515,6 +515,176 @@ app.prepare().then(() => {
       callback?.(room.chat || [])
     })
 
+    // Handle player ready
+    socket.on('game:player-ready', ({ roomId }, callback) => {
+      const room = roomManager.getRoom(roomId)
+      if (!room || !room.gameState) {
+        callback?.({ error: 'Room not found or no game state' })
+        return
+      }
+
+      const action = { type: 'PLAYER_READY' }
+      const result = applyAction(room.gameState, action, socket.data.userId)
+
+      if (result instanceof Error) {
+        callback?.({ error: result.message })
+        return
+      }
+
+      room.gameState = result
+
+      // Update player ready status in room.players too
+      const player = room.players.find(p => p.userId === socket.data.userId)
+      if (player) player.isReady = true
+
+      // If game started, start turn timer
+      if (result.phase === 'rolling' && room.gameState.phase === 'rolling') {
+        room.status = 'playing'
+        sendSystemMessage(roomId, io, 'Spiel gestartet!')
+        startTurnTimer(roomId, io)
+        io.emit('room:list-update', roomManager.getPublicRooms())
+      }
+
+      io.to(roomId).emit('game:state-update', { state: result, roomId })
+      callback?.({ success: true })
+    })
+
+    // Handle dice roll
+    socket.on('game:roll-dice', ({ roomId, keptDice }, callback) => {
+      const room = roomManager.getRoom(roomId)
+      if (!room || !room.gameState) {
+        callback?.({ error: 'Room not found or no game state' })
+        return
+      }
+
+      const newDice = rollDice(5)
+      const action = { type: 'ROLL_DICE', keptDice, newDice }
+      const result = applyAction(room.gameState, action, socket.data.userId)
+
+      if (result instanceof Error) {
+        callback?.({ error: result.message })
+        return
+      }
+
+      room.gameState = result
+      resetTurnTimer(roomId, io)
+
+      io.to(roomId).emit('game:state-update', { state: result, roomId })
+      callback?.({ success: true })
+    })
+
+    // Handle category choice
+    socket.on('game:choose-category', ({ roomId, category }, callback) => {
+      const room = roomManager.getRoom(roomId)
+      if (!room || !room.gameState) {
+        callback?.({ error: 'Room not found or no game state' })
+        return
+      }
+
+      const action = { type: 'CHOOSE_CATEGORY', category }
+      const result = applyAction(room.gameState, action, socket.data.userId)
+
+      if (result instanceof Error) {
+        callback?.({ error: result.message })
+        return
+      }
+
+      room.gameState = result
+      const currentPlayer = room.gameState.players[room.gameState.currentPlayerIndex]
+
+      // Reset consecutiveInactive on manual play
+      currentPlayer.consecutiveInactive = 0
+
+      const score = calculateScore(category, room.gameState.dice)
+      sendSystemMessage(roomId, io, `${socket.data.displayName} wählt ${category} (${score} Punkte)`)
+
+      // Check if game ended
+      if (result.phase === 'ended') {
+        room.status = 'ended'
+        clearTurnTimer(roomId)
+        const winnerPlayer = result.players.find(p => p.userId === result.winner)
+        const winnerTotal = calculateTotalScore(winnerPlayer.scoresheet)
+        sendSystemMessage(roomId, io, `Spiel beendet! Gewinner: ${winnerPlayer.displayName} (${winnerTotal} Punkte)`)
+        room.rematchVotes = { votedYes: [], votedNo: [], total: result.players.length, required: Math.ceil(result.players.length / 2) }
+        io.to(roomId).emit('game:ended', { winner: result.winner, scores: result.players.map(p => ({ userId: p.userId, displayName: p.displayName, total: calculateTotalScore(p.scoresheet) })) })
+        io.emit('room:list-update', roomManager.getPublicRooms())
+      } else {
+        result.turnStartedAt = Date.now()
+        startTurnTimer(roomId, io)
+      }
+
+      io.to(roomId).emit('game:state-update', { state: result, roomId })
+      callback?.({ success: true })
+    })
+
+    // Handle game start
+    socket.on('game:start', ({ roomId }, callback) => {
+      const room = roomManager.getRoom(roomId)
+      if (!room) {
+        callback?.({ error: 'Room not found' })
+        return
+      }
+
+      if (room.hostId !== socket.data.userId) {
+        callback?.({ error: 'Only host can start game' })
+        return
+      }
+
+      if (room.players.length < 2) {
+        callback?.({ error: 'Need at least 2 players' })
+        return
+      }
+
+      // Create initial game state
+      const gameState = createInitialState(room.players, {
+        turnTimer: room.turnTimer,
+        afkThreshold: room.afkThreshold
+      })
+
+      room.gameState = gameState
+      room.status = 'waiting'
+
+      io.to(roomId).emit('game:state-update', { state: gameState, roomId })
+      sendSystemMessage(roomId, io, 'Spiel vorbereitet. Alle Spieler bereit machen!')
+      io.emit('room:list-update', roomManager.getPublicRooms())
+      callback?.({ success: true })
+    })
+
+    // Handle rematch voting
+    socket.on('game:rematch-vote', ({ roomId, vote }, callback) => {
+      const room = roomManager.getRoom(roomId)
+      if (!room || !room.rematchVotes) {
+        callback?.({ error: 'No vote active' })
+        return
+      }
+
+      const rv = room.rematchVotes
+      // Remove existing vote from this user
+      rv.votedYes = rv.votedYes.filter(id => id !== socket.data.userId)
+      rv.votedNo = rv.votedNo.filter(id => id !== socket.data.userId)
+
+      if (vote) rv.votedYes.push(socket.data.userId)
+      else rv.votedNo.push(socket.data.userId)
+
+      io.to(roomId).emit('game:rematch-update', rv)
+
+      // Check if majority voted yes
+      if (rv.votedYes.length >= rv.required) {
+        room.status = 'waiting'
+        room.gameState = null
+        room.rematchVotes = null
+        for (const p of room.players) { p.isReady = false }
+        io.to(roomId).emit('game:rematch-accepted')
+        sendSystemMessage(roomId, io, 'Noch eine Runde! Alle bereit machen...')
+        io.emit('room:list-update', roomManager.getPublicRooms())
+      } else if (rv.votedNo.length > rv.total - rv.required) {
+        io.to(roomId).emit('game:rematch-declined')
+        sendSystemMessage(roomId, io, 'Kein Rematch. Zurueck zur Lobby.')
+      }
+
+      callback?.({ success: true })
+    })
+
     socket.on('disconnect', () => {
       console.log(`Client disconnected: ${socket.data.userId}`)
       const affectedRooms = roomManager.removeUserFromAllRooms(socket.data.userId)
