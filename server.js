@@ -515,88 +515,97 @@ app.prepare().then(() => {
       callback?.(room.chat || [])
     })
 
-    // Handle player ready
+    // Handle player ready toggle
     socket.on('game:player-ready', ({ roomId }, callback) => {
       const room = roomManager.getRoom(roomId)
-      if (!room || !room.gameState) {
-        callback?.({ error: 'Room not found or no game state' })
+      if (!room || room.status !== 'waiting') {
+        callback?.({ error: 'Invalid' })
         return
       }
-
-      const action = { type: 'PLAYER_READY' }
-      const result = applyAction(room.gameState, action, socket.data.userId)
-
-      if (result instanceof Error) {
-        callback?.({ error: result.message })
-        return
-      }
-
-      room.gameState = result
-
-      // Update player ready status in room.players too
       const player = room.players.find(p => p.userId === socket.data.userId)
-      if (player) player.isReady = true
-
-      // If game started, start turn timer
-      if (result.phase === 'rolling' && room.gameState.phase === 'rolling') {
-        room.status = 'playing'
-        sendSystemMessage(roomId, io, 'Spiel gestartet!')
-        startTurnTimer(roomId, io)
-        io.emit('room:list-update', roomManager.getPublicRooms())
+      if (!player) {
+        callback?.({ error: 'Not in room' })
+        return
       }
-
-      io.to(roomId).emit('game:state-update', { state: result, roomId })
-      callback?.({ success: true })
+      player.isReady = !player.isReady
+      io.to(roomId).emit('room:player-ready', {
+        userId: socket.data.userId,
+        isReady: player.isReady
+      })
+      callback?.({ success: true, isReady: player.isReady })
     })
 
     // Handle dice roll
     socket.on('game:roll-dice', ({ roomId, keptDice }, callback) => {
       const room = roomManager.getRoom(roomId)
       if (!room || !room.gameState) {
-        callback?.({ error: 'Room not found or no game state' })
+        callback?.({ error: 'No game' })
         return
       }
+      const gs = room.gameState
 
-      const newDice = rollDice(5)
-      const action = { type: 'ROLL_DICE', keptDice, newDice }
-      const result = applyAction(room.gameState, action, socket.data.userId)
+      // Generate new dice via imported crypto-rng
+      const newDiceValues = rollDice(5)
+
+      // Apply action via imported state machine
+      const action = {
+        type: 'ROLL_DICE',
+        keptDice: keptDice || [false, false, false, false, false],
+        newDice: newDiceValues
+      }
+      const result = applyAction(gs, action, socket.data.userId)
 
       if (result instanceof Error) {
         callback?.({ error: result.message })
         return
       }
 
+      // Update game state with result from state machine
       room.gameState = result
+
+      const currentPlayer = result.players[result.currentPlayerIndex]
+      currentPlayer.lastActivity = Date.now()
+      currentPlayer.consecutiveInactive = 0
+
+      // Reset turn timer
+      result.turnStartedAt = Date.now()
       resetTurnTimer(roomId, io)
 
       io.to(roomId).emit('game:state-update', { state: result, roomId })
-      callback?.({ success: true })
+      sendSystemMessage(roomId, io, `${currentPlayer.displayName} hat gewuerfelt`)
+      callback?.({ success: true, dice: result.dice })
     })
 
-    // Handle category choice
+    // Handle category selection
     socket.on('game:choose-category', ({ roomId, category }, callback) => {
       const room = roomManager.getRoom(roomId)
       if (!room || !room.gameState) {
-        callback?.({ error: 'Room not found or no game state' })
+        callback?.({ error: 'No game' })
         return
       }
+      const gs = room.gameState
 
+      // Apply action via imported state machine (which internally uses calculateScore)
       const action = { type: 'CHOOSE_CATEGORY', category }
-      const result = applyAction(room.gameState, action, socket.data.userId)
+      const result = applyAction(gs, action, socket.data.userId)
 
       if (result instanceof Error) {
         callback?.({ error: result.message })
         return
       }
 
+      // Calculate score for the message (before state update)
+      const scoredPlayer = gs.players[gs.currentPlayerIndex]
+      const score = calculateScore(category, gs.dice)
+
+      // Update game state
       room.gameState = result
-      const currentPlayer = room.gameState.players[room.gameState.currentPlayerIndex]
 
-      // Reset consecutiveInactive on manual play
-      currentPlayer.consecutiveInactive = 0
-
-      const score = calculateScore(category, room.gameState.dice)
-      sendSystemMessage(roomId, io, `${socket.data.displayName} wählt ${category} (${score} Punkte)`)
+      sendSystemMessage(
+        roomId,
+        io,
+        `${scoredPlayer.displayName} hat ${category} gewaehlt (${score} Punkte)`
+      )
 
       // Check if game ended
       if (result.phase === 'ended') {
@@ -604,17 +613,37 @@ app.prepare().then(() => {
         clearTurnTimer(roomId)
         const winnerPlayer = result.players.find(p => p.userId === result.winner)
         const winnerTotal = calculateTotalScore(winnerPlayer.scoresheet)
-        sendSystemMessage(roomId, io, `Spiel beendet! Gewinner: ${winnerPlayer.displayName} (${winnerTotal} Punkte)`)
-        room.rematchVotes = { votedYes: [], votedNo: [], total: result.players.length, required: Math.ceil(result.players.length / 2) }
-        io.to(roomId).emit('game:ended', { winner: result.winner, scores: result.players.map(p => ({ userId: p.userId, displayName: p.displayName, total: calculateTotalScore(p.scoresheet) })) })
+        sendSystemMessage(
+          roomId,
+          io,
+          `Spiel beendet! Gewinner: ${winnerPlayer.displayName} (${winnerTotal} Punkte)`
+        )
+
+        // Initialize rematch voting
+        room.rematchVotes = {
+          votedYes: [],
+          votedNo: [],
+          total: result.players.length,
+          required: Math.ceil(result.players.length / 2)
+        }
+
+        io.to(roomId).emit('game:ended', {
+          winner: result.winner,
+          scores: result.players.map(p => ({
+            userId: p.userId,
+            displayName: p.displayName,
+            total: calculateTotalScore(p.scoresheet)
+          }))
+        })
         io.emit('room:list-update', roomManager.getPublicRooms())
       } else {
+        // Restart turn timer for next player
         result.turnStartedAt = Date.now()
         startTurnTimer(roomId, io)
       }
 
       io.to(roomId).emit('game:state-update', { state: result, roomId })
-      callback?.({ success: true })
+      callback?.({ success: true, score })
     })
 
     // Handle game start
@@ -624,29 +653,43 @@ app.prepare().then(() => {
         callback?.({ error: 'Room not found' })
         return
       }
-
       if (room.hostId !== socket.data.userId) {
-        callback?.({ error: 'Only host can start game' })
+        callback?.({ error: 'Not host' })
         return
       }
 
-      if (room.players.length < 2) {
-        callback?.({ error: 'Need at least 2 players' })
+      const readyPlayers = room.players.filter(p => p.isReady)
+      if (readyPlayers.length < 2) {
+        callback?.({ error: 'Need at least 2 ready players' })
         return
       }
 
-      // Create initial game state
-      const gameState = createInitialState(room.players, {
+      // Move non-ready players to spectators
+      const notReady = room.players.filter(p => !p.isReady)
+      for (const p of notReady) {
+        room.spectators.push(p.userId)
+        sendSystemMessage(roomId, io, `${p.displayName} schaut zu (nicht bereit)`)
+      }
+      room.players = readyPlayers
+
+      // Use imported createInitialState from state-machine.ts
+      const playerData = readyPlayers.map(p => ({
+        userId: p.userId,
+        displayName: p.displayName
+      }))
+      const settings = {
         turnTimer: room.turnTimer,
         afkThreshold: room.afkThreshold
-      })
+      }
+      room.gameState = createInitialState(playerData, settings)
+      room.status = 'playing'
 
-      room.gameState = gameState
-      room.status = 'waiting'
-
-      io.to(roomId).emit('game:state-update', { state: gameState, roomId })
-      sendSystemMessage(roomId, io, 'Spiel vorbereitet. Alle Spieler bereit machen!')
+      sendSystemMessage(roomId, io, 'Das Spiel beginnt!')
+      io.to(roomId).emit('game:state-update', { state: room.gameState, roomId })
       io.emit('room:list-update', roomManager.getPublicRooms())
+
+      // Start turn timer
+      startTurnTimer(roomId, io)
       callback?.({ success: true })
     })
 
