@@ -20,6 +20,7 @@ model User {
   bannedReason  String?
 
   createdInvites Invite[] @relation("CreatedBy")
+  hostedRooms    GameRoom[] @relation("HostedRooms")
 }
 
 model Invite {
@@ -35,6 +36,23 @@ model Invite {
 
   @@index([token])
   @@index([email])
+}
+
+model GameRoom {
+  id            String   @id @default(cuid())
+  name          String
+  hostId        String
+  gameType      String   @default("kniffel")
+  status        String   @default("waiting") // waiting, playing, ended
+  isPrivate     Boolean  @default(false)
+  maxPlayers    Int      @default(6)
+  turnTimer     Int      @default(60) // seconds: 30, 60, 90
+  afkThreshold  Int      @default(3) // consecutive inactive rounds
+  gameState     Json?    // Stores full game state as JSON
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  host          User     @relation("HostedRooms", fields: [hostId], references: [id])
 }
 
 enum Role {
