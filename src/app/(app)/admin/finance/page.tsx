@@ -2,13 +2,17 @@ import {
   getEconomyStats,
   getSystemSettings,
   getAdminTransactionLog,
+  getSuspiciousActivity,
 } from '@/lib/actions/admin-finance'
 import { requireAdmin } from '@/lib/auth/dal'
 import { FinanceDashboard } from '@/components/admin/finance-dashboard'
 import { TransactionLog } from '@/components/admin/transaction-log'
 import { EconomicSettings } from '@/components/admin/economic-settings'
+import { BalanceAdjust } from '@/components/admin/balance-adjust'
+import { AlertMonitor } from '@/components/admin/alert-monitor'
 import { Coins } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Badge } from '@/components/ui/badge'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,10 +20,11 @@ export default async function AdminFinancePage() {
   await requireAdmin()
 
   // Fetch initial data in parallel
-  const [stats, settings, transactionLog] = await Promise.all([
+  const [stats, settings, transactionLog, alerts] = await Promise.all([
     getEconomyStats(),
     getSystemSettings(),
     getAdminTransactionLog({ limit: 50 }),
+    getSuspiciousActivity(),
   ])
 
   return (
@@ -38,9 +43,21 @@ export default async function AdminFinancePage() {
 
         {/* Tabs */}
         <Tabs defaultValue="dashboard" className="w-full">
-          <TabsList className="grid w-full max-w-md grid-cols-3 bg-zinc-900 border border-white/10">
+          <TabsList className="grid w-full max-w-4xl grid-cols-5 bg-zinc-900 border border-white/10">
             <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
             <TabsTrigger value="transactions">Transaktionen</TabsTrigger>
+            <TabsTrigger value="balance">Guthaben</TabsTrigger>
+            <TabsTrigger value="alerts" className="relative">
+              Alarme
+              {alerts.length > 0 && (
+                <Badge
+                  variant="destructive"
+                  className="ml-2 h-5 w-5 p-0 flex items-center justify-center text-xs"
+                >
+                  {alerts.length}
+                </Badge>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="settings">Einstellungen</TabsTrigger>
           </TabsList>
 
@@ -50,6 +67,14 @@ export default async function AdminFinancePage() {
 
           <TabsContent value="transactions" className="mt-6">
             <TransactionLog initialData={transactionLog} />
+          </TabsContent>
+
+          <TabsContent value="balance" className="mt-6">
+            <BalanceAdjust />
+          </TabsContent>
+
+          <TabsContent value="alerts" className="mt-6">
+            <AlertMonitor />
           </TabsContent>
 
           <TabsContent value="settings" className="mt-6">

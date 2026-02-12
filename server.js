@@ -637,6 +637,34 @@ app.prepare().then(() => {
       }
     })
 
+    // Handle admin balance adjustment notification
+    socket.on('admin:balance-adjusted', async ({ userId }) => {
+      try {
+        // Verify the emitting socket belongs to an admin user
+        const user = await prisma.user.findUnique({
+          where: { id: socket.data.userId },
+          select: { role: true }
+        })
+
+        if (!user || user.role !== 'ADMIN') {
+          console.error('Unauthorized admin:balance-adjusted attempt from', socket.data.userId)
+          return
+        }
+
+        // Fetch the affected user's current balance
+        const wallet = await getWalletWithUser(userId)
+
+        // Emit 'balance:updated' to the affected user's room
+        io.to(`user:${userId}`).emit('balance:updated', {
+          balance: wallet.balance
+        })
+
+        console.log(`Admin balance adjustment notification sent to user:${userId}`)
+      } catch (error) {
+        console.error('admin:balance-adjusted error:', error.message)
+      }
+    })
+
     // Handle room list request
     socket.on('room:list', (callback) => {
       callback({ success: true, rooms: roomManager.getPublicRooms() })
