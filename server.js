@@ -38,21 +38,22 @@ class RoomManager {
   }
 
   async createRoom(hostId, hostName, settings) {
+    console.log('Creating room:', { hostId, isBetRoom: settings.isBetRoom, betAmount: settings.betAmount })
     const roomId = randomUUID()
 
-    // Get default payout ratios from SystemSettings if not provided
-    let payoutRatios = settings.payoutRatios
+    // Only fetch payout ratios for bet rooms
+    let payoutRatios = settings.payoutRatios || null
     if (!payoutRatios && settings.isBetRoom) {
       try {
         const systemSettings = await prisma.systemSettings.findFirst()
-        payoutRatios = systemSettings?.defaultPayoutRatios || [
-          { position: 1, percentage: 60 },
-          { position: 2, percentage: 30 },
-          { position: 3, percentage: 10 }
-        ]
+        if (systemSettings?.defaultPayoutRatios) {
+          payoutRatios = systemSettings.defaultPayoutRatios
+        }
       } catch (error) {
-        console.error('Failed to fetch default payout ratios:', error)
-        // Fallback to defaults
+        console.error('Failed to fetch payout ratios from SystemSettings:', error.message)
+      }
+      // Fallback if fetch failed or no settings exist
+      if (!payoutRatios) {
         payoutRatios = [
           { position: 1, percentage: 60 },
           { position: 2, percentage: 30 },
@@ -85,6 +86,7 @@ class RoomManager {
     }
     this.rooms.set(roomId, room)
     this._trackUser(hostId, roomId)
+    console.log('Room created:', roomId)
     return room
   }
 
@@ -694,11 +696,16 @@ app.prepare().then(() => {
           }
         }
 
-        const room = await roomManager.createRoom(
-          socket.data.userId,
-          socket.data.displayName,
-          settings
+        // Add timeout protection
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Room creation timed out')), 5000)
         )
+
+        const room = await Promise.race([
+          roomManager.createRoom(socket.data.userId, socket.data.displayName, settings),
+          timeoutPromise
+        ])
+
         socket.join(room.id)
         callback({
           success: true,
