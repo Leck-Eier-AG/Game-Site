@@ -2,7 +2,7 @@
 
 import { getSession } from '@/lib/auth/dal'
 import { prisma } from '@/lib/db'
-import { TransactionType } from '@prisma/client'
+import { Prisma, TransactionType } from '@prisma/client'
 import { transferSchema } from '@/lib/validations/wallet'
 import {
   getWalletWithUser,
@@ -151,16 +151,6 @@ export async function transferFunds(
       }
     }
 
-    // Check sender wallet not frozen
-    const senderWallet = await prisma.wallet.findUnique({
-      where: { userId: session.userId },
-      select: { frozenAt: true },
-    })
-
-    if (senderWallet?.frozenAt) {
-      return { error: 'Dein Wallet ist gesperrt. Transfers nicht möglich.' }
-    }
-
     // Get recipient info for description
     const recipient = await prisma.user.findUnique({
       where: { id: toUserId },
@@ -171,23 +161,69 @@ export async function transferFunds(
       return { error: 'Empfänger nicht gefunden' }
     }
 
-    // Perform transfer in transaction
+    // Perform transfer in single atomic transaction
     await prisma.$transaction(async (tx) => {
-      // Debit sender
-      await debitBalance(
-        session.userId,
-        amount,
-        TransactionType.TRANSFER_SENT,
-        `Transfer an ${recipient.displayName}`
-      )
+      // 1. Check sender wallet exists and is not frozen
+      const senderWallet = await tx.wallet.findUnique({ where: { userId: session.userId } })
+      if (!senderWallet) throw new Error('Wallet nicht gefunden')
+      if (senderWallet.frozenAt) throw new Error('Dein Wallet ist gesperrt')
+      if (senderWallet.balance < amount) {
+        throw new Error(`Nicht genug Guthaben. Verfuegbar: ${senderWallet.balance}`)
+      }
 
-      // Credit receiver
-      await creditBalance(
-        toUserId,
-        amount,
-        TransactionType.TRANSFER_RECEIVED,
-        `Transfer von ${session.displayName}`
-      )
+      // 2. Debit sender
+      await tx.wallet.update({
+        where: { userId: session.userId },
+        data: { balance: { decrement: amount } },
+      })
+
+      await tx.transaction.create({
+        data: {
+          type: TransactionType.TRANSFER_SENT,
+          amount,
+          userId: session.userId,
+          relatedUserId: toUserId,
+          description: `Transfer an ${recipient.displayName}`,
+        },
+      })
+
+      // 3. Ensure recipient wallet exists (lazy init)
+      let recipientWallet = await tx.wallet.findUnique({ where: { userId: toUserId } })
+      if (!recipientWallet) {
+        const systemSettings = await tx.systemSettings.findFirst()
+        const startingBalance = systemSettings?.startingBalance ?? 1000
+        recipientWallet = await tx.wallet.create({
+          data: { userId: toUserId, balance: startingBalance },
+        })
+        await tx.transaction.create({
+          data: {
+            type: TransactionType.INITIAL,
+            amount: startingBalance,
+            userId: toUserId,
+            description: 'Initial balance',
+          },
+        })
+      }
+
+      // 4. Credit recipient
+      await tx.wallet.update({
+        where: { userId: toUserId },
+        data: { balance: { increment: amount } },
+      })
+
+      await tx.transaction.create({
+        data: {
+          type: TransactionType.TRANSFER_RECEIVED,
+          amount,
+          userId: toUserId,
+          relatedUserId: session.userId,
+          description: `Transfer von ${session.displayName}`,
+        },
+      })
+    }, {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      maxWait: 5000,
+      timeout: 10000,
     })
 
     return { success: true }

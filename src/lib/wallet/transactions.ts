@@ -140,7 +140,33 @@ export async function creditBalance(
 
   const result = await prisma.$transaction(
     async (tx) => {
-      // Update wallet balance
+      // Check if wallet exists, create with lazy init if not
+      const existingWallet = await tx.wallet.findUnique({ where: { userId } })
+
+      if (!existingWallet) {
+        // Lazy init: create wallet with starting balance
+        const settings = await tx.systemSettings.findFirst()
+        const startingBalance = settings?.startingBalance ?? 1000
+
+        await tx.wallet.create({
+          data: {
+            userId,
+            balance: startingBalance,
+          },
+        })
+
+        // Create INITIAL transaction
+        await tx.transaction.create({
+          data: {
+            type: TransactionType.INITIAL,
+            amount: startingBalance,
+            userId,
+            description: 'Initial balance',
+          },
+        })
+      }
+
+      // Now the wallet exists, proceed with the increment
       const wallet = await tx.wallet.update({
         where: { userId },
         data: {
