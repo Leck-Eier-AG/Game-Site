@@ -19,8 +19,12 @@ model User {
   bannedAt      DateTime?
   bannedReason  String?
 
-  createdInvites Invite[] @relation("CreatedBy")
-  hostedRooms    GameRoom[] @relation("HostedRooms")
+  createdInvites     Invite[]      @relation("CreatedBy")
+  hostedRooms        GameRoom[]    @relation("HostedRooms")
+  wallet             Wallet?
+  transactions       Transaction[]
+  relatedTransactions Transaction[] @relation("RelatedTransactions")
+  betEscrows         BetEscrow[]
 }
 
 model Invite {
@@ -53,6 +57,94 @@ model GameRoom {
   updatedAt     DateTime @updatedAt
 
   host          User     @relation("HostedRooms", fields: [hostId], references: [id])
+}
+
+model Wallet {
+  id                String    @id @default(cuid())
+  userId            String    @unique
+  balance           Int       @default(0)
+  frozenAt          DateTime?
+  lastDailyClaim    DateTime?
+  dailyClaimStreak  Int       @default(0)
+  registeredAt      DateTime  @default(now())
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([balance])
+}
+
+model Transaction {
+  id              String          @id @default(cuid())
+  type            TransactionType
+  amount          Int
+  userId          String
+  relatedUserId   String?
+  roomId          String?
+  description     String
+  metadata        Json?
+  createdAt       DateTime        @default(now())
+
+  user            User            @relation(fields: [userId], references: [id])
+  relatedUser     User?           @relation("RelatedTransactions", fields: [relatedUserId], references: [id])
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([type, createdAt(sort: Desc)])
+  @@index([roomId])
+}
+
+model BetEscrow {
+  id          String        @id @default(cuid())
+  roomId      String
+  userId      String
+  amount      Int
+  status      EscrowStatus
+  lockedAt    DateTime?
+  releasedAt  DateTime?
+  createdAt   DateTime      @default(now())
+
+  user        User          @relation(fields: [userId], references: [id])
+
+  @@unique([roomId, userId])
+  @@index([status, createdAt])
+}
+
+model SystemSettings {
+  id                    String   @id @default(cuid())
+  currencyName          String   @default("Chips")
+  startingBalance       Int      @default(1000)
+  dailyAllowanceBase    Int      @default(100)
+  weeklyBonusAmount     Int      @default(500)
+  transferMaxAmount     Int      @default(1000)
+  transferDailyLimit    Int      @default(5000)
+  defaultBetPresets     Json     @default("[50,100,250,500]")
+  defaultPayoutRatios   Json     @default("[{\"position\":1,\"percentage\":60},{\"position\":2,\"percentage\":30},{\"position\":3,\"percentage\":10}]")
+  afkGracePeriodSec     Int      @default(30)
+  alertTransferLimit    Int      @default(2000)
+  alertBalanceDropPct   Int      @default(50)
+  updatedAt             DateTime @updatedAt
+}
+
+enum TransactionType {
+  INITIAL
+  DAILY_CLAIM
+  WEEKLY_BONUS
+  GAME_WIN
+  BET_PLACED
+  BET_REFUND
+  BET_FORFEIT
+  TRANSFER_SENT
+  TRANSFER_RECEIVED
+  ADMIN_CREDIT
+  ADMIN_DEBIT
+}
+
+enum EscrowStatus {
+  PENDING
+  LOCKED
+  RELEASED
+  FORFEITED
 }
 
 enum Role {
