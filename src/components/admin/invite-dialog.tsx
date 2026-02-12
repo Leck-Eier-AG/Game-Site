@@ -21,6 +21,7 @@ export function InviteDialog() {
   const t = useTranslations('admin')
   const [open, setOpen] = useState(false)
   const [email, setEmail] = useState('')
+  const [customStartingBalance, setCustomStartingBalance] = useState('')
   const [generatedLink, setGeneratedLink] = useState('')
   const [copied, setCopied] = useState(false)
   const [emailPending, setEmailPending] = useState(false)
@@ -32,6 +33,9 @@ export function InviteDialog() {
     formData.append('email', email)
     formData.append('sendEmail', 'true')
     formData.append('origin', window.location.origin)
+    if (customStartingBalance) {
+      formData.append('customStartingBalance', customStartingBalance)
+    }
 
     const result = await createInvite(undefined, formData)
 
@@ -40,6 +44,7 @@ export function InviteDialog() {
     if (result?.success) {
       toast.success(t('inviteSent'))
       setEmail('')
+      setCustomStartingBalance('')
       setOpen(false)
     } else if (result?.error) {
       toast.error(result.error)
@@ -52,6 +57,9 @@ export function InviteDialog() {
     formData.append('email', email)
     formData.append('sendEmail', 'false')
     formData.append('origin', window.location.origin)
+    if (customStartingBalance) {
+      formData.append('customStartingBalance', customStartingBalance)
+    }
 
     const result = await createInvite(undefined, formData)
 
@@ -77,6 +85,7 @@ export function InviteDialog() {
   const handleClose = () => {
     setOpen(false)
     setEmail('')
+    setCustomStartingBalance('')
     setGeneratedLink('')
     setCopied(false)
   }
@@ -116,6 +125,25 @@ export function InviteDialog() {
               onChange={(e) => setEmail(e.target.value)}
               className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="customStartingBalance" className="text-zinc-300">
+              Individuelles Startguthaben (optional)
+            </Label>
+            <Input
+              id="customStartingBalance"
+              type="number"
+              placeholder="Standard: 1000"
+              value={customStartingBalance}
+              onChange={(e) => setCustomStartingBalance(e.target.value)}
+              className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500"
+              min="0"
+              step="1"
+            />
+            <p className="text-xs text-zinc-500">
+              Leer lassen für Standard-Startguthaben
+            </p>
           </div>
 
           {generatedLink ? (

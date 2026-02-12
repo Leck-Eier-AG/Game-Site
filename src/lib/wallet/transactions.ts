@@ -58,11 +58,38 @@ export async function getWalletWithUser(userId: string): Promise<WalletWithUser>
 
   const newWallet = await prisma.$transaction(
     async (tx) => {
+      // Get user to look up their invite
+      const user = await tx.user.findUnique({
+        where: { id: userId },
+        select: { email: true },
+      })
+
+      if (!user) {
+        throw new Error('User not found')
+      }
+
+      // Look up the invite to check for custom starting balance
+      const invite = await tx.invite.findFirst({
+        where: {
+          email: user.email.toLowerCase(),
+          usedAt: { not: null },
+        },
+        orderBy: {
+          usedAt: 'desc',
+        },
+        select: {
+          customStartingBalance: true,
+        },
+      })
+
+      // Use custom starting balance if set, otherwise use global default
+      const startingBalance = invite?.customStartingBalance ?? settings.startingBalance
+
       // Create wallet
       const wallet = await tx.wallet.create({
         data: {
           userId,
-          balance: settings.startingBalance,
+          balance: startingBalance,
         },
         include: {
           user: {
@@ -78,11 +105,12 @@ export async function getWalletWithUser(userId: string): Promise<WalletWithUser>
       await tx.transaction.create({
         data: {
           type: TransactionType.INITIAL,
-          amount: settings.startingBalance,
+          amount: startingBalance,
           userId,
           description: 'Initial balance',
           metadata: {
-            startingBalance: settings.startingBalance,
+            startingBalance,
+            fromInvite: invite?.customStartingBalance !== null && invite?.customStartingBalance !== undefined,
           },
         },
       })

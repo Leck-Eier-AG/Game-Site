@@ -11,6 +11,7 @@ import { sendInviteEmail } from '@/lib/email/invite'
 const InviteSchema = z.object({
   email: z.string().email('Ungültige E-Mail-Adresse'),
   sendEmail: z.boolean().optional(),
+  customStartingBalance: z.coerce.number().int().min(0).optional(),
 })
 
 const BanUserSchema = z.object({
@@ -41,6 +42,7 @@ export async function createInvite(
     const rawData = {
       email: formData.get('email') as string,
       sendEmail: formData.get('sendEmail') === 'true',
+      customStartingBalance: formData.get('customStartingBalance') as string | null,
     }
 
     const validatedFields = InviteSchema.safeParse(rawData)
@@ -51,7 +53,7 @@ export async function createInvite(
       }
     }
 
-    const { email, sendEmail } = validatedFields.data
+    const { email, sendEmail, customStartingBalance } = validatedFields.data
     const appUrl = (formData.get('origin') as string) || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
     // Check if user already exists
@@ -92,6 +94,7 @@ export async function createInvite(
         token,
         expiresAt,
         createdBy: admin.userId,
+        customStartingBalance: customStartingBalance || null,
       },
     })
 

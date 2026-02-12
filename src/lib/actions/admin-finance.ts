@@ -12,6 +12,8 @@ interface ActionState {
   success?: boolean
   newBalance?: number
   affected?: number
+  userId?: string
+  affectedUserIds?: string[]
 }
 
 /**
@@ -425,7 +427,7 @@ export async function adjustUserBalance(
 
     revalidatePath('/admin/finance')
 
-    return { success: true, newBalance: result.balance }
+    return { success: true, newBalance: result.balance, userId }
   } catch (error) {
     console.error('Adjust user balance error:', error)
     return {
@@ -497,6 +499,7 @@ export async function bulkAdjustBalance(
         const settings = await tx.systemSettings.findFirst()
         const startingBalance = settings?.startingBalance || 1000
         let affected = 0
+        const affectedUserIds: string[] = []
 
         for (const userId of targetUserIds) {
           // Get or create wallet
@@ -546,9 +549,10 @@ export async function bulkAdjustBalance(
           })
 
           affected++
+          affectedUserIds.push(userId)
         }
 
-        return affected
+        return { affected, affectedUserIds }
       },
       {
         isolationLevel: 'Serializable',
@@ -557,7 +561,7 @@ export async function bulkAdjustBalance(
 
     revalidatePath('/admin/finance')
 
-    return { success: true, affected: result }
+    return { success: true, affected: result.affected, affectedUserIds: result.affectedUserIds }
   } catch (error) {
     console.error('Bulk adjust balance error:', error)
     return { error: 'Fehler beim Massen-Anpassen des Guthabens' }
@@ -620,4 +624,219 @@ export async function unfreezeWallet(userId: string): Promise<ActionState> {
     console.error('Unfreeze wallet error:', error)
     return { error: 'Fehler beim Freigeben der Wallet' }
   }
+}
+
+/**
+ * Get users with wallet info for balance adjustment UI
+ */
+export async function getUsersWithWallets(search?: string) {
+  await requireAdmin()
+
+  const where: any = {
+    bannedAt: null,
+  }
+
+  // Apply search filter if provided
+  if (search && search.length > 0) {
+    where.OR = [
+      { displayName: { contains: search, mode: 'insensitive' } },
+      { username: { contains: search, mode: 'insensitive' } },
+      { email: { contains: search, mode: 'insensitive' } },
+    ]
+  }
+
+  const users = await prisma.user.findMany({
+    where,
+    take: 20, // Limit results for performance
+    select: {
+      id: true,
+      displayName: true,
+      username: true,
+      email: true,
+      wallet: {
+        select: {
+          balance: true,
+          frozenAt: true,
+        },
+      },
+    },
+    orderBy: {
+      displayName: 'asc',
+    },
+  })
+
+  return users.map((user) => ({
+    userId: user.id,
+    displayName: user.displayName,
+    username: user.username,
+    email: user.email,
+    balance: user.wallet?.balance || 0,
+    frozenAt: user.wallet?.frozenAt || null,
+  }))
+}
+
+interface SuspiciousAlert {
+  type: 'large_transfer' | 'daily_limit' | 'balance_drop'
+  severity: 'warning' | 'critical'
+  userId: string
+  displayName: string
+  details: string
+  timestamp: Date
+}
+
+/**
+ * Get suspicious activity alerts
+ */
+export async function getSuspiciousActivity(): Promise<SuspiciousAlert[]> {
+  await requireAdmin()
+
+  // Get SystemSettings for alert thresholds
+  const settings = await prisma.systemSettings.findFirst()
+  const alertTransferLimit = settings?.alertTransferLimit || 2000
+  const alertBalanceDropPct = settings?.alertBalanceDropPct || 50
+  const transferDailyLimit = settings?.transferDailyLimit || 5000
+
+  const twentyFourHoursAgo = subDays(new Date(), 1)
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000)
+
+  const alerts: SuspiciousAlert[] = []
+
+  // Query 1: Large transfers
+  const largeTransfers = await prisma.transaction.findMany({
+    where: {
+      type: 'TRANSFER_SENT',
+      createdAt: { gte: twentyFourHoursAgo },
+      amount: { gte: alertTransferLimit },
+    },
+    include: {
+      user: {
+        select: {
+          displayName: true,
+        },
+      },
+    },
+    orderBy: {
+      createdAt: 'desc',
+    },
+  })
+
+  for (const tx of largeTransfers) {
+    alerts.push({
+      type: 'large_transfer',
+      severity: tx.amount >= alertTransferLimit * 2 ? 'critical' : 'warning',
+      userId: tx.userId,
+      displayName: tx.user.displayName,
+      details: `Transfer von ${tx.amount} (Limit: ${alertTransferLimit})`,
+      timestamp: tx.createdAt,
+    })
+  }
+
+  // Query 2: Daily transfer limit exceeded
+  const dailyTransfers = await prisma.$queryRaw<
+    Array<{
+      user_id: string
+      total: bigint
+      display_name: string
+    }>
+  >`
+    SELECT
+      t.user_id,
+      SUM(t.amount) as total,
+      u.display_name
+    FROM "Transaction" t
+    JOIN "User" u ON u.id = t.user_id
+    WHERE t.type = 'TRANSFER_SENT'
+      AND t.created_at >= ${twentyFourHoursAgo}
+    GROUP BY t.user_id, u.display_name
+    HAVING SUM(t.amount) > ${transferDailyLimit}
+    ORDER BY total DESC
+  `
+
+  for (const item of dailyTransfers) {
+    const total = Number(item.total)
+    alerts.push({
+      type: 'daily_limit',
+      severity: 'critical',
+      userId: item.user_id,
+      displayName: item.display_name,
+      details: `Tagessumme: ${total} (Limit: ${transferDailyLimit})`,
+      timestamp: new Date(),
+    })
+  }
+
+  // Query 3: Rapid balance drops
+  // Get users who had transactions in the last hour
+  const recentTransactions = await prisma.transaction.findMany({
+    where: {
+      createdAt: { gte: oneHourAgo },
+    },
+    select: {
+      userId: true,
+    },
+    distinct: ['userId'],
+  })
+
+  for (const { userId } of recentTransactions) {
+    // Get current balance
+    const wallet = await prisma.wallet.findUnique({
+      where: { userId },
+      include: {
+        user: {
+          select: {
+            displayName: true,
+          },
+        },
+      },
+    })
+
+    if (!wallet) continue
+
+    // Calculate balance 1 hour ago
+    const transactionsSinceOneHour = await prisma.transaction.findMany({
+      where: {
+        userId,
+        createdAt: { gte: oneHourAgo },
+      },
+      select: {
+        type: true,
+        amount: true,
+      },
+    })
+
+    let previousBalance = wallet.balance
+    for (const tx of transactionsSinceOneHour) {
+      // Work backwards
+      const isDebit =
+        tx.type === 'BET_PLACED' ||
+        tx.type === 'TRANSFER_SENT' ||
+        tx.type === 'ADMIN_DEBIT'
+      if (isDebit) {
+        previousBalance += tx.amount
+      } else {
+        previousBalance -= tx.amount
+      }
+    }
+
+    // Calculate drop percentage
+    if (previousBalance > 0) {
+      const drop = previousBalance - wallet.balance
+      const dropPct = (drop / previousBalance) * 100
+
+      if (dropPct >= alertBalanceDropPct) {
+        alerts.push({
+          type: 'balance_drop',
+          severity: dropPct >= 80 ? 'critical' : 'warning',
+          userId: wallet.userId,
+          displayName: wallet.user.displayName,
+          details: `Von ${previousBalance} auf ${wallet.balance} (-${dropPct.toFixed(0)}%)`,
+          timestamp: new Date(),
+        })
+      }
+    }
+  }
+
+  // Sort by timestamp desc
+  alerts.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+
+  return alerts
 }
