@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Gamepad2, Shield } from 'lucide-react'
+import { Gamepad2, Shield, Coins } from 'lucide-react'
 import { UserMenu } from './user-menu'
 import { ConnectionStatus } from './connection-status'
 import { BalanceWidget } from '@/components/wallet/balance-widget'
@@ -28,6 +28,12 @@ const navItems = [
     href: '/admin',
     label: 'Administration',
     icon: Shield,
+    roles: ['ADMIN'] as UserRole[],
+  },
+  {
+    href: '/admin/finance',
+    label: 'Finanzen',
+    icon: Coins,
     roles: ['ADMIN'] as UserRole[],
   },
 ]
