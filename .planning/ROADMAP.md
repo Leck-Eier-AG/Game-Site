@@ -82,10 +82,19 @@ Plans:
   5. High-stakes bets show confirmation dialog before placement
   6. Admin can add or remove balance from any user
   7. All balance changes are logged in transaction history visible to admin
-**Plans**: TBD
+**Plans**: 10 plans
 
 Plans:
-- TBD during phase planning
+- [ ] 03-01-PLAN.md — Database schema (Wallet, Transaction, BetEscrow, SystemSettings) and core wallet operations
+- [ ] 03-02-PLAN.md — Payout calculation and escrow state machine (TDD)
+- [ ] 03-03-PLAN.md — Socket.IO balance events and sidebar balance widget with animated counter
+- [ ] 03-04-PLAN.md — Daily allowance with activity scaling, weekly bonus, and P2P transfers
+- [ ] 03-05-PLAN.md — Admin finance page with economy dashboard, transaction log, and system settings
+- [ ] 03-06-PLAN.md — Room creation betting flow (free/bet toggle, presets, payout ratios) and lobby badges/filters
+- [ ] 03-07-PLAN.md — Wallet page with balance chart, transaction history, daily claim, and transfer form
+- [ ] 03-08-PLAN.md — Escrow lifecycle integration (buy-in, refund, forfeit, payout) with pot display and results breakdown
+- [ ] 03-09-PLAN.md — Admin balance tools (adjustments, freeze) and suspicious activity alerts
+- [ ] 03-10-PLAN.md — Full Phase 3 verification checkpoint
 
 ### Phase 4: Additional Games
 **Goal**: Full game suite with Poker, Blackjack, and Roulette available
@@ -129,10 +138,10 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 |-------|----------------|--------|-----------|
 | 1. Foundation & Infrastructure | 6/6 | Complete | 2026-02-11 |
 | 2. Core Game Engine (Kniffel MVP) | 10/11 | In progress | - |
-| 3. Virtual Currency & Betting | 0/TBD | Not started | - |
+| 3. Virtual Currency & Betting | 0/10 | Not started | - |
 | 4. Additional Games | 0/TBD | Not started | - |
 | 5. Polish & Community | 0/TBD | Not started | - |
 
 ---
 *Roadmap created: 2026-02-11*
-*Last updated: 2026-02-11 (Plan 02-09 complete: Core game loop with state machine integration)*
+*Last updated: 2026-02-12 (Phase 3 planned: 10 plans in 5 waves for virtual currency and betting)*
