@@ -54,7 +54,7 @@ interface UserWithWallet {
 }
 
 export function BalanceAdjust() {
-  const { socket } = useSocket()
+  const { socket, fetchBalance } = useSocket()
 
   // Single adjustment state
   const [search, setSearch] = useState('')
@@ -114,7 +114,11 @@ export function BalanceAdjust() {
 
       // Emit socket event to notify affected user
       if (socket && singleAdjustState.userId) {
-        socket.emit('admin:balance-adjusted', { userId: singleAdjustState.userId })
+        socket.emit('admin:balance-adjusted', {
+          userId: singleAdjustState.userId,
+          newBalance: singleAdjustState.newBalance,
+          amount: singleAdjustState.amount,
+        })
       }
 
       // Reset form
@@ -133,12 +137,19 @@ export function BalanceAdjust() {
     if (bulkAdjustState?.success) {
       toast.success(`${bulkAdjustState.affected} Nutzer angepasst`)
 
-      // Emit socket events for all affected users
-      if (socket && bulkAdjustState.affectedUserIds) {
-        for (const userId of bulkAdjustState.affectedUserIds) {
-          socket.emit('admin:balance-adjusted', { userId })
+      // Notify each affected user via socket with their new balance
+      if (socket && bulkAdjustState.affectedUserBalances) {
+        for (const { userId, newBalance } of bulkAdjustState.affectedUserBalances) {
+          socket.emit('admin:balance-adjusted', {
+            userId,
+            newBalance,
+            amount: bulkAdjustState.amount,
+          })
         }
       }
+
+      // Update admin's own sidebar balance
+      fetchBalance()
 
       // Reset form
       setBulkAmount('')
@@ -147,7 +158,7 @@ export function BalanceAdjust() {
     } else if (bulkAdjustState?.error) {
       toast.error(bulkAdjustState.error)
     }
-  }, [bulkAdjustState, socket])
+  }, [bulkAdjustState, socket, fetchBalance])
 
   const handleFreeze = async () => {
     if (!selectedUser) return

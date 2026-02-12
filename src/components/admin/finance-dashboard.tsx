@@ -54,6 +54,20 @@ const formatCurrency = (value: number) => {
   return new Intl.NumberFormat('de-DE').format(value)
 }
 
+const transactionTypeLabels: Record<string, string> = {
+  INITIAL: 'Startguthaben',
+  DAILY_CLAIM: 'Tägliche Chips',
+  WEEKLY_BONUS: 'Wochenbonus',
+  GAME_WIN: 'Spielgewinn',
+  BET_PLACED: 'Einsatz',
+  BET_REFUND: 'Erstattung',
+  BET_FORFEIT: 'Verwirkt',
+  TRANSFER_SENT: 'Transfer (gesendet)',
+  TRANSFER_RECEIVED: 'Transfer (erhalten)',
+  ADMIN_CREDIT: 'Admin-Gutschrift',
+  ADMIN_DEBIT: 'Admin-Abzug',
+}
+
 const formatDate = (dateStr: string) => {
   const date = new Date(dateStr)
   return new Intl.DateTimeFormat('de-DE', {
@@ -200,18 +214,21 @@ export function FinanceDashboard({ stats }: FinanceDashboardProps) {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={stats.transactionTypeDistribution}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+            <ResponsiveContainer width="100%" height={stats.transactionTypeDistribution.length * 40 + 20}>
+              <BarChart data={stats.transactionTypeDistribution.map(d => ({ ...d, label: transactionTypeLabels[d.type] || d.type }))} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" horizontal={false} />
                 <XAxis
-                  dataKey="type"
+                  type="number"
                   stroke="#9ca3af"
-                  style={{ fontSize: '10px' }}
-                  angle={-45}
-                  textAnchor="end"
-                  height={80}
+                  style={{ fontSize: '12px' }}
                 />
-                <YAxis stroke="#9ca3af" style={{ fontSize: '12px' }} />
+                <YAxis
+                  type="category"
+                  dataKey="label"
+                  stroke="#9ca3af"
+                  style={{ fontSize: '11px' }}
+                  width={150}
+                />
                 <Tooltip
                   contentStyle={{
                     backgroundColor: '#18181b',
@@ -221,7 +238,7 @@ export function FinanceDashboard({ stats }: FinanceDashboardProps) {
                   labelStyle={{ color: '#fff' }}
                   formatter={(value) => [Number(value), 'Anzahl']}
                 />
-                <Bar dataKey="count" fill="#10b981" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="count" fill="#10b981" radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>

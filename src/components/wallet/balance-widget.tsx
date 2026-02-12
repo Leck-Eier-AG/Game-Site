@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import CountUp from 'react-countup'
 import { Coins } from 'lucide-react'
@@ -9,27 +9,31 @@ import { BalancePopover } from './balance-popover'
 import { cn } from '@/lib/utils'
 
 export function BalanceWidget() {
-  const { balance, balanceChange, isConnected } = useSocket()
-  const [previousBalance, setPreviousBalance] = useState<number | null>(null)
+  const { balance, isConnected } = useSocket()
+  const previousBalanceRef = useRef<number | null>(null)
   const [isFlashing, setIsFlashing] = useState(false)
   const [flashType, setFlashType] = useState<'positive' | 'negative'>('positive')
+  const [countFrom, setCountFrom] = useState<number | null>(null)
 
   // Track balance changes for animation
   useEffect(() => {
-    if (balance !== null && previousBalance !== null && balance !== previousBalance) {
-      const change = balance - previousBalance
+    if (balance === null) return
+
+    const prev = previousBalanceRef.current
+
+    if (prev !== null && balance !== prev) {
+      const change = balance - prev
       setFlashType(change > 0 ? 'positive' : 'negative')
       setIsFlashing(true)
+      setCountFrom(prev)
 
-      // Remove flash animation after 1s
       const timeout = setTimeout(() => setIsFlashing(false), 1000)
+      previousBalanceRef.current = balance
       return () => clearTimeout(timeout)
     }
 
-    if (balance !== null) {
-      setPreviousBalance(balance)
-    }
-  }, [balance, previousBalance])
+    previousBalanceRef.current = balance
+  }, [balance])
 
   // Loading skeleton
   if (balance === null || !isConnected) {
@@ -57,7 +61,7 @@ export function BalanceWidget() {
           </div>
           <div className="flex items-baseline gap-1">
             <CountUp
-              start={previousBalance || balance}
+              start={countFrom ?? balance}
               end={balance}
               duration={0.8}
               separator="."

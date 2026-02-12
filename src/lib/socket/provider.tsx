@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { Socket } from 'socket.io-client'
 import { getSocket } from './client'
 
@@ -43,7 +43,7 @@ export function SocketProvider({ children, userId }: SocketProviderProps) {
   const [balanceChange, setBalanceChange] = useState<BalanceChange | null>(null)
 
   // Function to fetch balance from server
-  const fetchBalance = () => {
+  const fetchBalance = useCallback(() => {
     const socket = socketRef.current
     if (!socket) return
 
@@ -52,7 +52,7 @@ export function SocketProvider({ children, userId }: SocketProviderProps) {
         setBalance(response.balance)
       }
     })
-  }
+  }, [])
 
   useEffect(() => {
     // Get the singleton socket instance
@@ -86,12 +86,16 @@ export function SocketProvider({ children, userId }: SocketProviderProps) {
       console.error('Socket.IO connection error:', error.message)
     }
 
-    const onBalanceUpdated = (data: { newBalance: number; change: number; description: string }) => {
-      console.log('Balance updated:', data)
-      setBalance(data.newBalance)
-      setBalanceChange({ amount: data.change, timestamp: Date.now() })
-      // Clear balance change animation after 1 second
-      setTimeout(() => setBalanceChange(null), 1000)
+    const onBalanceUpdated = (data: { newBalance?: number; balance?: number; change?: number; description?: string }) => {
+      // Accept both { newBalance } (emitBalanceUpdate) and { balance } (legacy) formats
+      const newBal = data.newBalance ?? data.balance
+      if (newBal == null) return
+
+      setBalance(newBal)
+      if (data.change != null) {
+        setBalanceChange({ amount: data.change, timestamp: Date.now() })
+        setTimeout(() => setBalanceChange(null), 1000)
+      }
     }
 
     // Register event handlers

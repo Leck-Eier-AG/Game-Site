@@ -188,7 +188,16 @@ export function TransactionList({ initialTransactions }: TransactionListProps) {
               </h4>
               <div className="space-y-2">
                 {dayTransactions.map((transaction) => {
-                  const isPositive = transaction.amount > 0
+                  const creditTypes: TransactionType[] = [
+                    TransactionType.INITIAL,
+                    TransactionType.DAILY_CLAIM,
+                    TransactionType.WEEKLY_BONUS,
+                    TransactionType.GAME_WIN,
+                    TransactionType.TRANSFER_RECEIVED,
+                    TransactionType.ADMIN_CREDIT,
+                    TransactionType.BET_REFUND,
+                  ]
+                  const isCredit = creditTypes.includes(transaction.type)
                   return (
                     <div
                       key={transaction.id}
@@ -210,10 +219,10 @@ export function TransactionList({ initialTransactions }: TransactionListProps) {
                       <div className="flex-shrink-0 ml-4">
                         <span
                           className={`text-sm font-semibold ${
-                            isPositive ? 'text-green-500' : 'text-red-500'
+                            isCredit ? 'text-green-500' : 'text-red-500'
                           }`}
                         >
-                          {isPositive ? '+' : ''}
+                          {isCredit ? '+' : '-'}
                           {new Intl.NumberFormat('de-DE').format(transaction.amount)}
                         </span>
                       </div>

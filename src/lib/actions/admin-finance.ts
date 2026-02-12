@@ -12,8 +12,10 @@ interface ActionState {
   success?: boolean
   newBalance?: number
   affected?: number
+  amount?: number
   userId?: string
   affectedUserIds?: string[]
+  affectedUserBalances?: { userId: string; newBalance: number }[]
 }
 
 /**
@@ -42,12 +44,12 @@ export async function getEconomyStats() {
     // Daily transaction volume (last 30 days)
     prisma.$queryRaw<Array<{ date: Date; count: bigint; total: bigint }>>`
       SELECT
-        DATE(created_at) as date,
+        DATE("createdAt") as date,
         COUNT(*) as count,
         SUM(ABS(amount)) as total
       FROM "Transaction"
-      WHERE created_at >= ${thirtyDaysAgo}
-      GROUP BY DATE(created_at)
+      WHERE "createdAt" >= ${thirtyDaysAgo}
+      GROUP BY DATE("createdAt")
       ORDER BY date ASC
     `,
 
@@ -69,21 +71,21 @@ export async function getEconomyStats() {
     // Top 5 spenders (most sent/bet amount)
     prisma.$queryRaw<
       Array<{
-        user_id: string
+        userId: string
         total_spent: bigint
-        display_name: string
+        displayName: string
         username: string
       }>
     >`
       SELECT
-        t.user_id,
+        t."userId",
         SUM(ABS(t.amount)) as total_spent,
-        u.display_name,
+        u."displayName",
         u.username
       FROM "Transaction" t
-      JOIN "User" u ON u.id = t.user_id
+      JOIN "User" u ON u.id = t."userId"
       WHERE t.type IN ('TRANSFER_SENT', 'BET_PLACED')
-      GROUP BY t.user_id, u.display_name, u.username
+      GROUP BY t."userId", u."displayName", u.username
       ORDER BY total_spent DESC
       LIMIT 5
     `,
@@ -113,8 +115,8 @@ export async function getEconomyStats() {
       balance: wallet.balance,
     })),
     topSpenders: topSpenders.map((spender) => ({
-      userId: spender.user_id,
-      displayName: spender.display_name,
+      userId: spender.userId,
+      displayName: spender.displayName,
       username: spender.username,
       totalSpent: Number(spender.total_spent),
     })),
@@ -430,7 +432,7 @@ export async function adjustUserBalance(
 
     revalidatePath('/admin/finance')
 
-    return { success: true, newBalance: result.balance, userId }
+    return { success: true, newBalance: result.balance, userId, amount }
   } catch (error) {
     console.error('Adjust user balance error:', error)
     return {
@@ -503,6 +505,7 @@ export async function bulkAdjustBalance(
         const startingBalance = settings?.startingBalance || 1000
         let affected = 0
         const affectedUserIds: string[] = []
+        const affectedUserBalances: { userId: string; newBalance: number }[] = []
 
         for (const userId of targetUserIds) {
           // Get or create wallet
@@ -553,9 +556,10 @@ export async function bulkAdjustBalance(
 
           affected++
           affectedUserIds.push(userId)
+          affectedUserBalances.push({ userId, newBalance })
         }
 
-        return { affected, affectedUserIds }
+        return { affected, affectedUserIds, affectedUserBalances }
       },
       {
         isolationLevel: 'Serializable',
@@ -564,7 +568,13 @@ export async function bulkAdjustBalance(
 
     revalidatePath('/admin/finance')
 
-    return { success: true, affected: result.affected, affectedUserIds: result.affectedUserIds }
+    return {
+      success: true,
+      affected: result.affected,
+      affectedUserIds: result.affectedUserIds,
+      affectedUserBalances: result.affectedUserBalances,
+      amount,
+    }
   } catch (error) {
     console.error('Bulk adjust balance error:', error)
     return { error: 'Fehler beim Massen-Anpassen des Guthabens' }
@@ -737,20 +747,20 @@ export async function getSuspiciousActivity(): Promise<SuspiciousAlert[]> {
   // Query 2: Daily transfer limit exceeded
   const dailyTransfers = await prisma.$queryRaw<
     Array<{
-      user_id: string
+      userId: string
       total: bigint
-      display_name: string
+      displayName: string
     }>
   >`
     SELECT
-      t.user_id,
+      t."userId",
       SUM(t.amount) as total,
-      u.display_name
+      u."displayName"
     FROM "Transaction" t
-    JOIN "User" u ON u.id = t.user_id
+    JOIN "User" u ON u.id = t."userId"
     WHERE t.type = 'TRANSFER_SENT'
-      AND t.created_at >= ${twentyFourHoursAgo}
-    GROUP BY t.user_id, u.display_name
+      AND t."createdAt" >= ${twentyFourHoursAgo}
+    GROUP BY t."userId", u."displayName"
     HAVING SUM(t.amount) > ${transferDailyLimit}
     ORDER BY total DESC
   `
@@ -760,8 +770,8 @@ export async function getSuspiciousActivity(): Promise<SuspiciousAlert[]> {
     alerts.push({
       type: 'daily_limit',
       severity: 'critical',
-      userId: item.user_id,
-      displayName: item.display_name,
+      userId: item.userId,
+      displayName: item.displayName,
       details: `Tagessumme: ${total} (Limit: ${transferDailyLimit})`,
       timestamp: new Date().toISOString(),
     })

@@ -640,9 +640,8 @@ app.prepare().then(() => {
     })
 
     // Handle admin balance adjustment notification
-    socket.on('admin:balance-adjusted', async ({ userId }) => {
+    socket.on('admin:balance-adjusted', async ({ userId, newBalance, amount }) => {
       try {
-        // Verify the emitting socket belongs to an admin user
         const user = await prisma.user.findUnique({
           where: { id: socket.data.userId },
           select: { role: true }
@@ -653,15 +652,15 @@ app.prepare().then(() => {
           return
         }
 
-        // Fetch the affected user's current balance
-        const wallet = await getWalletWithUser(userId)
+        // Use newBalance from the event if provided (already computed by the server action),
+        // otherwise fall back to querying the DB
+        let balance = newBalance
+        if (balance == null) {
+          const wallet = await getWalletWithUser(userId)
+          balance = wallet.balance
+        }
 
-        // Emit 'balance:updated' to the affected user's room
-        io.to(`user:${userId}`).emit('balance:updated', {
-          balance: wallet.balance
-        })
-
-        console.log(`Admin balance adjustment notification sent to user:${userId}`)
+        emitBalanceUpdate(io, userId, balance, amount || 0, 'Admin-Anpassung')
       } catch (error) {
         console.error('admin:balance-adjusted error:', error.message)
       }
