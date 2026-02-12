@@ -10,17 +10,17 @@ See: .planning/PROJECT.md (updated 2026-02-11)
 ## Current Position
 
 Phase: 3 of 5 (Virtual Currency Betting)
-Plan: 1 of 10 in current phase
+Plan: 4 of 10 in current phase
 Status: In progress
-Last activity: 2026-02-12 — Completed 03-01-PLAN.md (Core wallet infrastructure)
+Last activity: 2026-02-12 — Completed 03-04-PLAN.md (Daily allowance and transfers)
 
-Progress: [██████████████████░░] 32% (16/50 total plans complete, 1/10 Phase 3 plans complete)
+Progress: [██████████████████░░] 34% (17/50 total plans complete, 4/10 Phase 3 plans complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 16
-- Average duration: 9.3 min
+- Total plans completed: 17
+- Average duration: 8.7 min
 - Total execution time: 2.5 hours
 
 **By Phase:**
@@ -29,15 +29,16 @@ Progress: [██████████████████░░] 32% (16
 |-------|-------|-------|----------|
 | 1 (Foundation) | 6/6 | 111 min | 18.5 min |
 | 2 (Game Engine) | 10/11 | 31 min | 3.1 min |
-| 3 (Virtual Currency) | 1/10 | 2.9 min | 2.9 min |
+| 3 (Virtual Currency) | 4/10 | 3.4 min | 0.85 min |
 
 **Recent Trend:**
-- Last 5 plans: 4min, 4min, 4min, 5min, 2.9min
-- Trend: Phase 3 starting with strong velocity
+- Last 5 plans: 4min, 4min, 5min, 2.9min, 0.5min
+- Trend: Phase 3 high velocity, previous agent completed tasks
 
 *Updated after each plan completion*
 
 | Phase 03 P01 | 174s (2.9min) | 2 tasks | 5 files |
+| Phase 03 P04 | 30s (0.5min) | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -109,6 +110,10 @@ Recent decisions affecting current work:
 - Lazy wallet initialization (03-01): Create wallet with starting balance on first access, no migration needed
 - Frozen wallets asymmetric (03-01): Can receive (transfers, wins, claims) but cannot send (bets, transfers)
 - Transaction ledger immutable (03-01): All balance changes create transaction records with type, amount, description, metadata
+- Activity multiplier 1.0x to 2.0x (03-04): Three components (games, time, streak) contribute to daily allowance scaling
+- Non-accumulating daily claims (03-04): Can only claim current day, missed days don't roll over
+- Weekly bonus fixed amount (03-04): 7th consecutive claim triggers bonus without multiplier for predictability
+- Daily transfer limits with aggregation (03-04): Single max + daily total cap prevents abuse via multiple small transfers
 
 ### Pending Todos
 
@@ -125,6 +130,6 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-12 (plan execution)
-Stopped at: Completed 03-01-PLAN.md (Core wallet infrastructure)
+Stopped at: Completed 03-04-PLAN.md (Daily allowance and transfers)
 Resume file: None
-Next: Continue Phase 3 with Plan 03-02 (Payout calculator & escrow state machine)
+Next: Continue Phase 3 with Plan 03-05 (Wallet UI components)
