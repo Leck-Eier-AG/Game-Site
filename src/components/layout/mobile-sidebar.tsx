@@ -13,6 +13,7 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet'
 import { UserMenu } from './user-menu'
+import { BalanceWidget } from '@/components/wallet/balance-widget'
 import { cn } from '@/lib/utils'
 import type { UserRole } from '@/types'
 
@@ -90,6 +91,11 @@ export function MobileSidebar({ user }: MobileSidebarProps) {
                 )
               })}
             </nav>
+
+            {/* Balance Widget */}
+            <div className="p-4 border-t border-white/10">
+              <BalanceWidget />
+            </div>
 
             {/* User Menu at bottom */}
             <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-white/10">

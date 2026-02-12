@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { Gamepad2, Shield } from 'lucide-react'
 import { UserMenu } from './user-menu'
 import { ConnectionStatus } from './connection-status'
+import { BalanceWidget } from '@/components/wallet/balance-widget'
 import { cn } from '@/lib/utils'
 import type { UserRole } from '@/types'
 
@@ -70,6 +71,11 @@ export function Sidebar({ user }: SidebarProps) {
           )
         })}
       </nav>
+
+      {/* Balance Widget */}
+      <div className="p-4 border-t border-white/10">
+        <BalanceWidget />
+      </div>
 
       {/* Connection Status */}
       <div className="p-4 border-t border-white/10">
