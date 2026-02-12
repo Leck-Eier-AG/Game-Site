@@ -9,7 +9,9 @@ import { PrismaClient } from '@prisma/client'
 import { applyAction, createInitialState } from './src/lib/game/state-machine.js'
 import { autoPickCategory, calculateScore, calculateTotalScore } from './src/lib/game/kniffel-rules.js'
 import { rollDice } from './src/lib/game/crypto-rng.js'
-import { getWalletWithUser, getTransactionHistory } from './src/lib/wallet/transactions.js'
+import { getWalletWithUser, getTransactionHistory, creditBalance, debitBalance, getSystemSettings } from './src/lib/wallet/transactions.js'
+import { calculatePayouts } from './src/lib/wallet/payout.js'
+import { canTransition } from './src/lib/wallet/escrow.js'
 
 const dev = process.env.NODE_ENV !== 'production'
 const hostname = 'localhost'
@@ -208,8 +210,45 @@ class RoomManager {
 
 const roomManager = new RoomManager()
 
+// Helper: Build rankings from game state for payout calculation
+function buildRankings(gameState) {
+  // Sort players by total score descending
+  const sortedPlayers = [...gameState.players]
+    .map(p => ({
+      ...p,
+      total: calculateTotalScore(p.scoresheet)
+    }))
+    .sort((a, b) => b.total - a.total)
+
+  // Build rankings with tie detection
+  const rankings = []
+  let currentPosition = 1
+  let i = 0
+
+  while (i < sortedPlayers.length) {
+    const currentScore = sortedPlayers[i].total
+    const tiedPlayers = []
+
+    // Collect all players with the same score
+    while (i < sortedPlayers.length && sortedPlayers[i].total === currentScore) {
+      tiedPlayers.push(sortedPlayers[i].userId)
+      i++
+    }
+
+    rankings.push({
+      position: currentPosition,
+      userIds: tiedPlayers
+    })
+
+    currentPosition += tiedPlayers.length
+  }
+
+  return rankings
+}
+
 // Turn timer management
 const turnTimers = new Map() // roomId -> timeout
+const afkWarnings = new Map() // roomId:userId -> timeout
 
 function startTurnTimer(roomId, io) {
   clearTurnTimer(roomId)
@@ -274,8 +313,37 @@ function autoPlay(roomId, io) {
 
   // Check AFK threshold
   if (currentPlayer.consecutiveInactive >= room.afkThreshold) {
-    kickPlayerAFK(room, roomId, currentPlayer, io)
-    return
+    // In bet rooms, emit grace period warning before kicking
+    if (room.isBetRoom) {
+      const warningKey = `${roomId}:${currentPlayer.userId}`
+      const existingWarning = afkWarnings.get(warningKey)
+
+      if (!existingWarning) {
+        // First time hitting threshold: start grace period
+        const settings = await getSystemSettings()
+        const gracePeriodSec = settings.afkGracePeriodSec || 30
+
+        io.to(`user:${currentPlayer.userId}`).emit('bet:afk-warning', {
+          roomId,
+          gracePeriodSec,
+          message: `Du wirst in ${gracePeriodSec} Sekunden wegen Inaktivitaet entfernt. Dein Einsatz verfaellt.`
+        })
+
+        // Set timeout for actual kick
+        const kickTimeout = setTimeout(async () => {
+          await kickPlayerAFK(room, roomId, currentPlayer, io)
+          afkWarnings.delete(warningKey)
+          io.to(roomId).emit('game:state-update', { state: room.gameState, roomId })
+        }, gracePeriodSec * 1000)
+
+        afkWarnings.set(warningKey, kickTimeout)
+      }
+      // If warning already exists, let it continue (don't reset)
+    } else {
+      // Free room: kick immediately
+      await kickPlayerAFK(room, roomId, currentPlayer, io)
+      return
+    }
   }
 
   // Check if game ended
@@ -285,8 +353,84 @@ function autoPlay(roomId, io) {
     const winnerPlayer = result.players.find(p => p.userId === result.winner)
     const winnerTotal = calculateTotalScore(winnerPlayer.scoresheet)
     sendSystemMessage(roomId, io, `Spiel beendet! Gewinner: ${winnerPlayer.displayName} (${winnerTotal} Punkte)`)
+
+    // Handle bet room payouts
+    let payoutData = null
+    if (room.isBetRoom) {
+      try {
+        // Calculate total pot from LOCKED escrows
+        const escrows = await prisma.betEscrow.findMany({
+          where: { roomId, status: 'LOCKED' }
+        })
+        const totalPot = escrows.reduce((sum, e) => sum + e.amount, 0)
+
+        // Build rankings
+        const rankings = buildRankings(result)
+
+        // Calculate payouts
+        const payouts = calculatePayouts(totalPot, rankings, room.payoutRatios)
+
+        // Distribute payouts and release escrows
+        await prisma.$transaction(async (tx) => {
+          // Credit winners
+          for (const [userId, amount] of payouts.entries()) {
+            if (amount > 0) {
+              const player = result.players.find(p => p.userId === userId)
+              const position = rankings.find(r => r.userIds.includes(userId))?.position || 0
+
+              await tx.wallet.update({
+                where: { userId },
+                data: { balance: { increment: amount } }
+              })
+
+              await tx.transaction.create({
+                data: {
+                  type: 'GAME_WIN',
+                  amount,
+                  userId,
+                  description: `${room.name} gewonnen (${position}. Platz)`
+                }
+              })
+
+              // Emit balance update
+              emitBalanceUpdate(io, userId, 0, amount, `${room.name} gewonnen`)
+            }
+          }
+
+          // Release all escrows
+          await tx.betEscrow.updateMany({
+            where: { roomId, status: 'LOCKED' },
+            data: {
+              status: 'RELEASED',
+              releasedAt: new Date()
+            }
+          })
+        }, {
+          isolationLevel: 'Serializable',
+          maxWait: 5000,
+          timeout: 10000
+        })
+
+        // Build payout data for client
+        payoutData = Array.from(payouts.entries()).map(([userId, amount]) => {
+          const player = result.players.find(p => p.userId === userId)
+          const position = rankings.find(r => r.userIds.includes(userId))?.position || 0
+          return {
+            userId,
+            displayName: player?.displayName || 'Unknown',
+            position,
+            amount
+          }
+        })
+
+        room.payouts = payoutData
+      } catch (error) {
+        console.error('Payout error:', error)
+      }
+    }
+
     room.rematchVotes = { votedYes: [], votedNo: [], total: result.players.length, required: Math.ceil(result.players.length / 2) }
-    io.to(roomId).emit('game:ended', { winner: result.winner, scores: result.players.map(p => ({ userId: p.userId, displayName: p.displayName, total: calculateTotalScore(p.scoresheet) })) })
+    io.to(roomId).emit('game:ended', { winner: result.winner, scores: result.players.map(p => ({ userId: p.userId, displayName: p.displayName, total: calculateTotalScore(p.scoresheet) })), payouts: payoutData })
     io.emit('room:list-update', roomManager.getPublicRooms())
   } else {
     result.turnStartedAt = Date.now()
@@ -296,11 +440,46 @@ function autoPlay(roomId, io) {
   io.to(roomId).emit('game:state-update', { state: result, roomId })
 }
 
-// AFK kick
-function kickPlayerAFK(room, roomId, player, io) {
+// AFK kick with escrow forfeit for bet rooms
+async function kickPlayerAFK(room, roomId, player, io) {
   sendSystemMessage(roomId, io, `${player.displayName} wurde entfernt (AFK)`)
   room.gameState.players = room.gameState.players.filter(p => p.userId !== player.userId)
   room.players = room.players.filter(p => p.userId !== player.userId)
+
+  // Handle bet room escrow forfeit
+  if (room.isBetRoom) {
+    try {
+      const escrow = await prisma.betEscrow.findFirst({
+        where: { roomId, userId: player.userId, status: 'LOCKED' }
+      })
+
+      if (escrow) {
+        await prisma.$transaction(async (tx) => {
+          // Update escrow to forfeited
+          await tx.betEscrow.update({
+            where: { id: escrow.id },
+            data: { status: 'FORFEITED' }
+          })
+
+          // Create forfeit transaction record
+          await tx.transaction.create({
+            data: {
+              type: 'BET_FORFEIT',
+              amount: escrow.amount,
+              userId: player.userId,
+              description: `Einsatz verfallen: ${room.name} (AFK)`
+            }
+          })
+        }, {
+          isolationLevel: 'Serializable',
+          maxWait: 5000,
+          timeout: 10000
+        })
+      }
+    } catch (error) {
+      console.error('AFK forfeit error:', error)
+    }
+  }
 
   // If only 1 player left, they win by default
   if (room.gameState.players.length < 2) {
@@ -507,7 +686,90 @@ app.prepare().then(() => {
     })
 
     // Handle room join
-    socket.on('room:join', ({ roomId }, callback) => {
+    socket.on('room:join', async ({ roomId }, callback) => {
+      const room = roomManager.getRoom(roomId)
+      if (!room) {
+        callback?.({ success: false, error: 'Room not found' })
+        return
+      }
+
+      // Check if already in room
+      if (room.players.some(p => p.userId === socket.data.userId)) {
+        socket.join(roomId)
+        callback?.({ success: true, room, rejoined: true })
+        return
+      }
+
+      // For bet rooms, handle escrow
+      if (room.isBetRoom && room.status === 'waiting') {
+        try {
+          // Get wallet
+          const wallet = await getWalletWithUser(socket.data.userId)
+
+          // Check if frozen
+          if (wallet.frozenAt !== null) {
+            callback?.({ success: false, error: 'Wallet is frozen' })
+            return
+          }
+
+          // Check balance
+          if (wallet.balance < room.betAmount) {
+            // Insufficient balance: join as spectator
+            if (!room.spectators.includes(socket.data.userId)) {
+              room.spectators.push(socket.data.userId)
+            }
+            roomManager._trackUser(socket.data.userId, roomId)
+            socket.join(roomId)
+            callback?.({ success: true, room, spectator: true, reason: 'insufficient_balance' })
+            sendSystemMessage(roomId, io, `${socket.data.displayName} schaut zu (nicht genug Chips)`)
+            io.to(roomId).emit('room:update', room)
+            io.emit('room:list-update', roomManager.getPublicRooms())
+            return
+          }
+
+          // Sufficient balance: debit and create escrow
+          await prisma.$transaction(async (tx) => {
+            // Debit balance
+            await tx.wallet.update({
+              where: { userId: socket.data.userId },
+              data: { balance: { decrement: room.betAmount } }
+            })
+
+            // Create transaction record
+            await tx.transaction.create({
+              data: {
+                type: 'BET_PLACED',
+                amount: room.betAmount,
+                userId: socket.data.userId,
+                description: `Einsatz: ${room.name}`
+              }
+            })
+
+            // Create escrow
+            await tx.betEscrow.create({
+              data: {
+                roomId,
+                userId: socket.data.userId,
+                amount: room.betAmount,
+                status: 'PENDING'
+              }
+            })
+          }, {
+            isolationLevel: 'Serializable',
+            maxWait: 5000,
+            timeout: 10000
+          })
+
+          // Emit balance update
+          emitBalanceUpdate(io, socket.data.userId, wallet.balance - room.betAmount, -room.betAmount, `Einsatz: ${room.name}`)
+        } catch (error) {
+          console.error('Bet escrow error:', error)
+          callback?.({ success: false, error: error.message })
+          return
+        }
+      }
+
+      // Join room normally
       const result = roomManager.joinRoom(
         roomId,
         socket.data.userId,
@@ -534,15 +796,100 @@ app.prepare().then(() => {
     })
 
     // Handle room leave
-    socket.on('room:leave', ({ roomId }, callback) => {
+    socket.on('room:leave', async ({ roomId }, callback) => {
+      const room = roomManager.getRoom(roomId)
+      if (!room) {
+        callback?.({ success: true })
+        return
+      }
+
+      // Handle bet room escrow
+      if (room.isBetRoom) {
+        const wasPlayer = room.players.some(p => p.userId === socket.data.userId)
+
+        if (wasPlayer) {
+          try {
+            // Find escrow for this user
+            const escrow = await prisma.betEscrow.findFirst({
+              where: { roomId, userId: socket.data.userId }
+            })
+
+            if (escrow) {
+              if (escrow.status === 'PENDING') {
+                // Game hasn't started: refund
+                const wallet = await getWalletWithUser(socket.data.userId)
+                await prisma.$transaction(async (tx) => {
+                  // Credit balance back
+                  await tx.wallet.update({
+                    where: { userId: socket.data.userId },
+                    data: { balance: { increment: escrow.amount } }
+                  })
+
+                  // Create refund transaction
+                  await tx.transaction.create({
+                    data: {
+                      type: 'BET_REFUND',
+                      amount: escrow.amount,
+                      userId: socket.data.userId,
+                      description: `Einsatz zurueck: ${room.name}`
+                    }
+                  })
+
+                  // Update escrow status
+                  await tx.betEscrow.update({
+                    where: { id: escrow.id },
+                    data: {
+                      status: 'RELEASED',
+                      releasedAt: new Date()
+                    }
+                  })
+                }, {
+                  isolationLevel: 'Serializable',
+                  maxWait: 5000,
+                  timeout: 10000
+                })
+
+                // Emit balance update
+                emitBalanceUpdate(io, socket.data.userId, wallet.balance + escrow.amount, escrow.amount, `Einsatz zurueck: ${room.name}`)
+              } else if (escrow.status === 'LOCKED') {
+                // Game in progress: forfeit (no refund)
+                await prisma.$transaction(async (tx) => {
+                  // Update escrow to forfeited
+                  await tx.betEscrow.update({
+                    where: { id: escrow.id },
+                    data: { status: 'FORFEITED' }
+                  })
+
+                  // Create forfeit transaction record (no balance change)
+                  await tx.transaction.create({
+                    data: {
+                      type: 'BET_FORFEIT',
+                      amount: escrow.amount,
+                      userId: socket.data.userId,
+                      description: `Einsatz verfallen: ${room.name}`
+                    }
+                  })
+                }, {
+                  isolationLevel: 'Serializable',
+                  maxWait: 5000,
+                  timeout: 10000
+                })
+              }
+            }
+          } catch (error) {
+            console.error('Leave escrow error:', error)
+          }
+        }
+      }
+
       sendSystemMessage(roomId, io, `${socket.data.displayName} hat den Raum verlassen`)
-      const room = roomManager.leaveRoom(roomId, socket.data.userId)
+      const updatedRoom = roomManager.leaveRoom(roomId, socket.data.userId)
       socket.leave(roomId)
-      if (room) {
+      if (updatedRoom) {
         io.to(roomId).emit('room:player-left', { userId: socket.data.userId })
-        io.to(roomId).emit('room:update', room)
-        if (room.hostId !== socket.data.userId) {
-          io.to(roomId).emit('room:new-host', { hostId: room.hostId })
+        io.to(roomId).emit('room:update', updatedRoom)
+        if (updatedRoom.hostId !== socket.data.userId) {
+          io.to(roomId).emit('room:new-host', { hostId: updatedRoom.hostId })
         }
       }
       io.emit('room:list-update', roomManager.getPublicRooms())
@@ -689,6 +1036,15 @@ app.prepare().then(() => {
       currentPlayer.lastActivity = Date.now()
       currentPlayer.consecutiveInactive = 0
 
+      // Cancel AFK warning if active
+      const warningKey = `${roomId}:${socket.data.userId}`
+      const existingWarning = afkWarnings.get(warningKey)
+      if (existingWarning) {
+        clearTimeout(existingWarning)
+        afkWarnings.delete(warningKey)
+        io.to(`user:${socket.data.userId}`).emit('bet:afk-warning-cancel')
+      }
+
       // Reset turn timer
       result.turnStartedAt = Date.now()
       resetTurnTimer(roomId, io)
@@ -720,6 +1076,15 @@ app.prepare().then(() => {
       const scoredPlayer = gs.players[gs.currentPlayerIndex]
       const score = calculateScore(category, gs.dice)
 
+      // Cancel AFK warning if active
+      const warningKey = `${roomId}:${socket.data.userId}`
+      const existingWarning = afkWarnings.get(warningKey)
+      if (existingWarning) {
+        clearTimeout(existingWarning)
+        afkWarnings.delete(warningKey)
+        io.to(`user:${socket.data.userId}`).emit('bet:afk-warning-cancel')
+      }
+
       // Update game state
       room.gameState = result
 
@@ -741,6 +1106,81 @@ app.prepare().then(() => {
           `Spiel beendet! Gewinner: ${winnerPlayer.displayName} (${winnerTotal} Punkte)`
         )
 
+        // Handle bet room payouts
+        let payoutData = null
+        if (room.isBetRoom) {
+          try {
+            // Calculate total pot from LOCKED escrows
+            const escrows = await prisma.betEscrow.findMany({
+              where: { roomId, status: 'LOCKED' }
+            })
+            const totalPot = escrows.reduce((sum, e) => sum + e.amount, 0)
+
+            // Build rankings
+            const rankings = buildRankings(result)
+
+            // Calculate payouts
+            const payouts = calculatePayouts(totalPot, rankings, room.payoutRatios)
+
+            // Distribute payouts and release escrows
+            await prisma.$transaction(async (tx) => {
+              // Credit winners
+              for (const [userId, amount] of payouts.entries()) {
+                if (amount > 0) {
+                  const player = result.players.find(p => p.userId === userId)
+                  const position = rankings.find(r => r.userIds.includes(userId))?.position || 0
+
+                  await tx.wallet.update({
+                    where: { userId },
+                    data: { balance: { increment: amount } }
+                  })
+
+                  await tx.transaction.create({
+                    data: {
+                      type: 'GAME_WIN',
+                      amount,
+                      userId,
+                      description: `${room.name} gewonnen (${position}. Platz)`
+                    }
+                  })
+
+                  // Emit balance update
+                  emitBalanceUpdate(io, userId, 0, amount, `${room.name} gewonnen`)
+                }
+              }
+
+              // Release all escrows
+              await tx.betEscrow.updateMany({
+                where: { roomId, status: 'LOCKED' },
+                data: {
+                  status: 'RELEASED',
+                  releasedAt: new Date()
+                }
+              })
+            }, {
+              isolationLevel: 'Serializable',
+              maxWait: 5000,
+              timeout: 10000
+            })
+
+            // Build payout data for client
+            payoutData = Array.from(payouts.entries()).map(([userId, amount]) => {
+              const player = result.players.find(p => p.userId === userId)
+              const position = rankings.find(r => r.userIds.includes(userId))?.position || 0
+              return {
+                userId,
+                displayName: player?.displayName || 'Unknown',
+                position,
+                amount
+              }
+            })
+
+            room.payouts = payoutData
+          } catch (error) {
+            console.error('Payout error:', error)
+          }
+        }
+
         // Initialize rematch voting
         room.rematchVotes = {
           votedYes: [],
@@ -756,7 +1196,8 @@ app.prepare().then(() => {
             userId: p.userId,
             displayName: p.displayName,
             total: calculateTotalScore(p.scoresheet)
-          }))
+          })),
+          payouts: payoutData
         })
         io.emit('room:list-update', roomManager.getPublicRooms())
       } else {
@@ -819,6 +1260,24 @@ app.prepare().then(() => {
       room.gameState.phase = 'rolling'
       room.gameState.turnStartedAt = Date.now()
       room.status = 'playing'
+
+      // Lock all PENDING escrows for bet rooms
+      if (room.isBetRoom) {
+        try {
+          await prisma.betEscrow.updateMany({
+            where: {
+              roomId,
+              status: 'PENDING'
+            },
+            data: {
+              status: 'LOCKED',
+              lockedAt: new Date()
+            }
+          })
+        } catch (error) {
+          console.error('Failed to lock escrows:', error)
+        }
+      }
 
       sendSystemMessage(roomId, io, 'Das Spiel beginnt!')
       io.to(roomId).emit('room:update', room)
