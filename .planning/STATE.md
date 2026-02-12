@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-11)
 
 **Core value:** Spieler können in Echtzeit gemeinsam klassische deutsche Spiele spielen — wie an einem echten Stammtisch, nur online.
-**Current focus:** Phase 2 - Core Game Engine
+**Current focus:** Phase 3 - Virtual Currency Betting
 
 ## Current Position
 
-Phase: 2 of 5 (Core Game Engine)
-Plan: 10 of 11 in current phase
+Phase: 3 of 5 (Virtual Currency Betting)
+Plan: 2 of 10 in current phase
 Status: In progress
-Last activity: 2026-02-11 — Completed 02-09-PLAN.md (Core game loop)
+Last activity: 2026-02-12 — Completed 03-02-PLAN.md (Payout calculator & escrow state machine)
 
-Progress: [██████████████████░] 30% (15/50 total plans complete, 10/11 Phase 2 plans complete)
+Progress: [██████████████████░░] 32% (16/50 total plans complete, 2/10 Phase 3 plans complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 15
-- Average duration: 9.7 min
-- Total execution time: 2.4 hours
+- Total plans completed: 16
+- Average duration: 9.3 min
+- Total execution time: 2.5 hours
 
 **By Phase:**
 
@@ -29,10 +29,11 @@ Progress: [██████████████████░] 30% (15/50
 |-------|-------|-------|----------|
 | 1 (Foundation) | 6/6 | 111 min | 18.5 min |
 | 2 (Game Engine) | 10/11 | 31 min | 3.1 min |
+| 3 (Virtual Currency) | 2/10 | 1 min | 0.5 min |
 
 **Recent Trend:**
-- Last 5 plans: 2min, 4min, 4min, 4min, 5min
-- Trend: Phase 2 maintaining exceptional velocity - avg 3min per plan
+- Last 5 plans: 4min, 4min, 4min, 5min, 1min
+- Trend: Phase 3 starting with exceptional velocity
 
 *Updated after each plan completion*
 
@@ -102,6 +103,9 @@ Recent decisions affecting current work:
 - Server delegates to state machine (02-09): All game logic via applyAction, createInitialState from imported modules
 - Ready toggle in waiting phase (02-09): game:player-ready toggles directly, not via state machine (room-level concept)
 - Filter ready players on start (02-09): game:start moves non-ready to spectators before creating initial state
+- [Phase 03]: Pure payout calculator using integer arithmetic to avoid floating point precision issues
+- [Phase 03]: Transition table pattern for escrow state machine provides clear validation logic
+- [Phase 03]: Sole finisher gets entire pot regardless of configured ratios (edge case handling)
 
 ### Pending Todos
 
@@ -117,7 +121,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-11 (plan execution)
-Stopped at: Completed 02-09-PLAN.md (Core game loop)
+Last session: 2026-02-12 (plan execution)
+Stopped at: Completed 03-02-PLAN.md (Payout calculator & escrow state machine)
 Resume file: None
-Next: Complete Phase 2 with final plan (02-11: end-to-end verification and UAT)
+Next: Continue Phase 3 with Plan 03 (wallet transaction handlers)
