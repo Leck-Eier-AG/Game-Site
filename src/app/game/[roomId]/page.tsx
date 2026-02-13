@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useSocket } from '@/lib/socket/provider'
 import { WaitingRoom } from '@/components/game/WaitingRoom'
 import { GameBoard } from '@/components/game/GameBoard'
+import { BlackjackTable } from '@/components/blackjack/BlackjackTable'
 import type { GameState, RoomInfo } from '@/types/game'
 import { useTranslations } from 'next-intl'
 import { Trophy, ArrowLeft, Send } from 'lucide-react'
@@ -332,18 +333,14 @@ export default function GameRoomPage() {
         )
       case 'blackjack':
         return (
-          <div className="flex h-screen items-center justify-center bg-gradient-to-br from-gray-900 to-gray-800">
-            <div className="text-center">
-              <h1 className="text-4xl font-bold text-white mb-4">🃏 Blackjack</h1>
-              <p className="text-xl text-gray-400">Kommt bald</p>
-              <Button
-                onClick={() => router.push('/')}
-                className="mt-6 bg-green-600 hover:bg-green-700"
-              >
-                Zurück zur Lobby
-              </Button>
-            </div>
-          </div>
+          <BlackjackTable
+            gameState={room.gameState as any}
+            roomId={roomId}
+            currentUserId={userId || ''}
+            socket={socket}
+            isBetRoom={room.isBetRoom}
+            betAmount={room.betAmount}
+          />
         )
       case 'roulette':
         return (
