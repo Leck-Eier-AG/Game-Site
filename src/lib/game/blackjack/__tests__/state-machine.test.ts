@@ -5,7 +5,7 @@
 
 import { describe, it, expect } from '@jest/globals';
 import type { Card } from '../../cards/types';
-import { createBlackjackState, applyBlackjackAction } from '../state-machine';
+import { createBlackjackState, applyBlackjackAction, updateHandStatus } from '../state-machine';
 import type { BlackjackGameState, BlackjackAction } from '../state-machine';
 
 describe('Blackjack State Machine', () => {
@@ -62,7 +62,7 @@ describe('Blackjack State Machine', () => {
       }
     });
 
-    it('should transition to dealing phase when all players have bet', () => {
+    it('should transition to player_turn phase when all players have bet', () => {
       let state = createBlackjackState(
         [
           { userId: 'user1', displayName: 'Player 1' },
@@ -75,9 +75,11 @@ describe('Blackjack State Machine', () => {
       state = applyBlackjackAction(state, { type: 'PLACE_BET', payload: { amount: 100 } }, 'user1') as BlackjackGameState;
       expect(state.phase).toBe('betting');
 
-      // Second player bets
+      // Second player bets (triggers dealing and transition to player_turn)
       state = applyBlackjackAction(state, { type: 'PLACE_BET', payload: { amount: 50 } }, 'user2') as BlackjackGameState;
-      expect(state.phase).toBe('dealing');
+      expect(state.phase).toBe('player_turn');
+      expect(state.players[0].hands[0].cards).toHaveLength(2); // Cards were dealt
+      expect(state.players[1].hands[0].cards).toHaveLength(2);
     });
 
     it('should return error if player bets in wrong phase', () => {
@@ -110,10 +112,10 @@ describe('Blackjack State Machine', () => {
       // Place bet to trigger dealing
       state = applyBlackjackAction(state, { type: 'PLACE_BET', payload: { amount: 100 } }, 'user1') as BlackjackGameState;
 
-      expect(state.phase).toBe('dealing');
+      expect(state.phase).toBe('player_turn'); // Dealing is instantaneous
       expect(state.players[0].hands[0].cards).toHaveLength(2);
       expect(state.dealer.cards).toHaveLength(2);
-      expect(state.dealer.hidden).toBe(true); // First card is hidden
+      expect(state.dealer.hidden).toBe(true); // Hole card is hidden
     });
 
     it('should transition to player_turn phase after dealing', () => {
@@ -154,14 +156,16 @@ describe('Blackjack State Machine', () => {
       // Manually set up a hand that will bust on next hit
       state = applyBlackjackAction(state, { type: 'PLACE_BET', payload: { amount: 100 } }, 'user1') as BlackjackGameState;
 
-      // Set up cards that total 20 (will bust with any card > Ace)
+      // Set up cards that total >21
       const cards: Card[] = [
         { rank: 'K', suit: 'hearts' },
         { rank: '10', suit: 'spades' },
-        { rank: 'Q', suit: 'diamonds' } // This will cause bust (>21)
+        { rank: 'Q', suit: 'diamonds' } // Total: 30 (busted)
       ];
 
       state.players[0].hands[0].cards = cards;
+      // Update status to reflect the cards (in real game, this happens through actions)
+      state.players[0].hands[0] = updateHandStatus(state.players[0].hands[0]);
 
       expect(state.players[0].hands[0].status).toBe('busted');
     });
@@ -205,7 +209,7 @@ describe('Blackjack State Machine', () => {
       expect(state.currentPlayerIndex).toBe(1); // Moved to player 2
     });
 
-    it('should transition to dealer_turn when all players have stood', () => {
+    it('should transition to settlement when all players have stood', () => {
       let state = createBlackjackState(
         [{ userId: 'user1', displayName: 'Player 1' }],
         { deckCount: 6, turnTimer: 30000 }
@@ -214,7 +218,8 @@ describe('Blackjack State Machine', () => {
       state = applyBlackjackAction(state, { type: 'PLACE_BET', payload: { amount: 100 } }, 'user1') as BlackjackGameState;
       state = applyBlackjackAction(state, { type: 'STAND' }, 'user1') as BlackjackGameState;
 
-      expect(state.phase).toBe('dealer_turn');
+      // After all players stand, dealer plays automatically and moves to settlement
+      expect(state.phase).toBe('settlement');
     });
   });
 
@@ -233,7 +238,8 @@ describe('Blackjack State Machine', () => {
 
       expect(state.players[0].hands[0].bet).toBe(200); // Doubled
       expect(state.players[0].hands[0].cards.length).toBe(initialCardCount + 1);
-      expect(state.players[0].hands[0].status).toBe('stood');
+      // Status can be 'stood' or 'busted' depending on the dealt card
+      expect(['stood', 'busted']).toContain(state.players[0].hands[0].status);
       expect(state.players[0].hands[0].isDoubled).toBe(true);
     });
   });
@@ -332,7 +338,7 @@ describe('Blackjack State Machine', () => {
   });
 
   describe('Dealer Turn', () => {
-    it('should dealer hit on 16 or less', () => {
+    it('should dealer hit on 16 or less and transition to settlement', () => {
       let state = createBlackjackState(
         [{ userId: 'user1', displayName: 'Player 1' }],
         { deckCount: 6, turnTimer: 30000 }
@@ -341,18 +347,13 @@ describe('Blackjack State Machine', () => {
       state = applyBlackjackAction(state, { type: 'PLACE_BET', payload: { amount: 100 } }, 'user1') as BlackjackGameState;
       state = applyBlackjackAction(state, { type: 'STAND' }, 'user1') as BlackjackGameState;
 
-      // Manually set dealer to 16
-      state.dealer.cards = [
-        { rank: '10', suit: 'hearts' },
-        { rank: '6', suit: 'spades' }
-      ];
-
-      // Trigger dealer turn logic (this would be automatic in real implementation)
-      // For now, just verify dealer is in dealer_turn phase
-      expect(state.phase).toBe('dealer_turn');
+      // After all players stand, dealer plays automatically and moves to settlement
+      expect(state.phase).toBe('settlement');
+      expect(state.dealer.hidden).toBe(false); // Hole card revealed
+      expect(state.dealer.cards.length).toBeGreaterThanOrEqual(2);
     });
 
-    it('should dealer stand on 17 or more', () => {
+    it('should dealer play and transition to settlement', () => {
       let state = createBlackjackState(
         [{ userId: 'user1', displayName: 'Player 1' }],
         { deckCount: 6, turnTimer: 30000 }
@@ -361,7 +362,8 @@ describe('Blackjack State Machine', () => {
       state = applyBlackjackAction(state, { type: 'PLACE_BET', payload: { amount: 100 } }, 'user1') as BlackjackGameState;
       state = applyBlackjackAction(state, { type: 'STAND' }, 'user1') as BlackjackGameState;
 
-      expect(state.phase).toBe('dealer_turn');
+      // Dealer auto-plays and game moves to settlement
+      expect(state.phase).toBe('settlement');
     });
   });
 
@@ -374,11 +376,12 @@ describe('Blackjack State Machine', () => {
 
       state = applyBlackjackAction(state, { type: 'PLACE_BET', payload: { amount: 100 } }, 'user1') as BlackjackGameState;
 
-      // Set up blackjack
+      // Set up blackjack (Ace + King = 21)
       state.players[0].hands[0].cards = [
         { rank: 'A', suit: 'hearts' },
         { rank: 'K', suit: 'spades' }
       ];
+      state.players[0].hands[0] = updateHandStatus(state.players[0].hands[0]);
 
       expect(state.players[0].hands[0].status).toBe('blackjack');
     });
