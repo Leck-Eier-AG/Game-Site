@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-11)
 ## Current Position
 
 Phase: 3 of 5 (Virtual Currency Betting)
-Plan: 14 of 14 in current phase (gap closure complete, 03-10 UAT remains)
-Status: In progress
-Last activity: 2026-02-13 — Completed 03-14-PLAN.md (UI bug fixes for pot display and transfers)
+Plan: 15 of 15 in current phase (all gap closure complete)
+Status: Phase complete — ready for Phase 4 planning
+Last activity: 2026-02-13 — Completed 03-15-PLAN.md (BetConfirmation wiring)
 
-Progress: [█████████████████████] 52% (26/50 total plans complete, 14/14 Phase 3 plans complete)
+Progress: [█████████████████████] 54% (27/50 total plans complete, 15/15 Phase 3 plans complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 26
-- Average duration: 5.5 min
-- Total execution time: 2.7 hours
+- Total plans completed: 27
+- Average duration: 5.2 min
+- Total execution time: 2.8 hours
 
 **By Phase:**
 
@@ -29,11 +29,11 @@ Progress: [█████████████████████] 52% 
 |-------|-------|-------|----------|
 | 1 (Foundation) | 6/6 | 111 min | 18.5 min |
 | 2 (Game Engine) | 10/11 | 31 min | 3.1 min |
-| 3 (Virtual Currency) | 14/14 | 48.7 min | 3.5 min |
+| 3 (Virtual Currency) | 15/15 | 51.3 min | 3.4 min |
 
 **Recent Trend:**
-- Last 5 plans: 4.9min, 6.5min, 3.4min, 3.5min, 4.05min
-- Trend: Phase 3 maintaining solid velocity, gap closure plans averaging ~3.6 min
+- Last 5 plans: 6.5min, 3.4min, 3.5min, 4.05min, 2.6min
+- Trend: Phase 3 complete with excellent velocity, gap closure plans averaged 3.3 min
 
 *Updated after each plan completion*
 
@@ -49,6 +49,7 @@ Progress: [█████████████████████] 52% 
 | Phase 03 P12 | 206s (3.4min) | 2 tasks | 4 files |
 | Phase 03 P13 | 243s (4.05min) | 3 tasks | 1 file |
 | Phase 03 P14 | 209s (3.5min) | 2 tasks | 3 files |
+| Phase 03 P15 | 158s (2.6min) | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -156,6 +157,9 @@ Recent decisions affecting current work:
 - Disconnect escrow cleanup (03-13): Mirror room:leave logic - refund PENDING, forfeit LOCKED based on game status
 - Use trigger prop for TransferDialog (03-14): TransferDialog accepts trigger prop (not children), consistent with component API
 - Remove duplicate form field name (03-14): Only hidden input has name attribute with JSON value for proper FormData parsing
+- ?confirmed=true query param flow signaling (03-15): Lobby → game navigation includes confirmation status to prevent double-prompting
+- Free rooms and low-stakes bypass confirmation (03-15): Threshold-based UX - only high-stakes bets (>25% balance) show confirmation dialog
+- Context-appropriate cancel behavior (03-15): Lobby cancel stays on lobby, game room cancel redirects home
 
 ### Pending Todos
 
@@ -171,7 +175,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-13 (gap closure execution)
-Stopped at: Completed 03-13 + 03-14 gap closure round 2. Verification: 6/7 must-haves pass. Gap: BetConfirmation not wired to room join.
+Last session: 2026-02-13 (gap closure execution complete)
+Stopped at: Completed 03-15-PLAN.md (BetConfirmation wiring). Phase 3 complete: 15/15 plans, all 7 VERIFICATION.md truths pass.
 Resume file: None
-Next: /gsd:plan-phase 3 --gaps to create plan 03-15 for BetConfirmation wiring
+Next: /gsd:plan-phase 4 to begin Phase 4 (Progressive Web App) planning
