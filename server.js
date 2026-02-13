@@ -14,6 +14,8 @@ import { calculatePayouts } from './src/lib/wallet/payout.js'
 import { canTransition } from './src/lib/wallet/escrow.js'
 import { registerBlackjackHandlers } from './src/lib/game/blackjack/handlers.js'
 import { createBlackjackState } from './src/lib/game/blackjack/state-machine.js'
+import { registerRouletteHandlers } from './src/lib/game/roulette/handlers.js'
+import { createInitialState as createRouletteState } from './src/lib/game/roulette/state-machine.js'
 
 const dev = process.env.NODE_ENV !== 'production'
 const hostname = 'localhost'
@@ -620,6 +622,7 @@ app.prepare().then(() => {
 
     // Register game-specific handlers
     registerBlackjackHandlers(socket, io, roomManager, prisma)
+    registerRouletteHandlers(socket, io, roomManager, prisma)
 
     // Handle wallet balance request
     socket.on('wallet:get-balance', async (callback) => {
@@ -1397,12 +1400,12 @@ app.prepare().then(() => {
         }
         room.gameState = createBlackjackState(playerData, settings)
       } else if (room.gameType === 'roulette') {
-        // Placeholder state for Roulette (will be replaced by Plan 04-04)
-        room.gameState = {
-          phase: 'betting',
-          gameType: 'roulette',
-          players: playerData
+        // Use createRouletteState from state-machine.ts
+        const settings = {
+          spinTimerSec: room.rouletteSettings?.spinTimerSec || 30,
+          isManualSpin: room.rouletteSettings?.isManualSpin ?? true
         }
+        room.gameState = createRouletteState(playerData, settings)
       } else if (room.gameType === 'poker') {
         // Placeholder state for Poker (will be replaced by Plan 04-05)
         room.gameState = {
