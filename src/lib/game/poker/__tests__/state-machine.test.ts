@@ -744,18 +744,22 @@ describe('Poker State Machine', () => {
         state = applyPokerAction(state, { type: 'POST_BLINDS' }, 'user1') as PokerGameState;
         state = applyPokerAction(state, { type: 'FOLD' }, 'user1') as PokerGameState;
 
-        // Start new hand if not at 5th hand yet
+        // Manually advance hand number and maintain state across hands
         if (i < 4) {
-          state = createPokerState(
-            players,
-            { ...settings, smallBlind: state.blinds.small, bigBlind: state.blinds.big },
-            shuffleDeck(createDeck())
-          );
-          state.handNumber = i + 2;
+          state = {
+            ...createPokerState(
+              players,
+              { ...settings, smallBlind: state.blinds.small, bigBlind: state.blinds.big },
+              shuffleDeck(createDeck())
+            ),
+            handNumber: state.handNumber + 1,
+            lastBlindIncrease: state.lastBlindIncrease,
+            blinds: state.blinds
+          };
         }
       }
 
-      // Blinds should have increased
+      // Blinds should have increased after 5 hands
       expect(state.blinds.small).toBeGreaterThan(5);
       expect(state.blinds.big).toBeGreaterThan(10);
     });
