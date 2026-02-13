@@ -42,6 +42,9 @@ export const ROULETTE_BETS: Record<RouletteBetType, BetConfig> = {
   high: { count: 18, payout: 1 }
 }
 
+// Outside bets that don't require specific numbers
+const OUTSIDE_BETS: RouletteBetType[] = ['red', 'black', 'odd', 'even', 'low', 'high']
+
 /**
  * Validate that a bet has the correct number count and valid combinations
  */
@@ -49,7 +52,7 @@ export function validateBet(betType: RouletteBetType, numbers: number[]): boolea
   const config = ROULETTE_BETS[betType]
 
   // Outside bets don't need numbers specified
-  if (['red', 'black', 'odd', 'even', 'low', 'high'].includes(betType)) {
+  if (OUTSIDE_BETS.includes(betType)) {
     return numbers.length === 0
   }
 
