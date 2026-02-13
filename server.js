@@ -803,41 +803,53 @@ app.prepare().then(() => {
             return
           }
 
-          // Sufficient balance: debit and create escrow
-          await prisma.$transaction(async (tx) => {
-            // Debit balance
-            await tx.wallet.update({
-              where: { userId: socket.data.userId },
-              data: { balance: { decrement: room.betAmount } }
-            })
-
-            // Create transaction record
-            await tx.transaction.create({
-              data: {
-                type: 'BET_PLACED',
-                amount: room.betAmount,
-                userId: socket.data.userId,
-                description: `Einsatz: ${room.name}`
-              }
-            })
-
-            // Create escrow
-            await tx.betEscrow.create({
-              data: {
-                roomId,
-                userId: socket.data.userId,
-                amount: room.betAmount,
-                status: 'PENDING'
-              }
-            })
-          }, {
-            isolationLevel: 'Serializable',
-            maxWait: 5000,
-            timeout: 10000
+          // [ESCROW_IDEMPOTENT_JOIN] - Check for existing escrow before creating
+          const existingEscrow = await prisma.betEscrow.findFirst({
+            where: {
+              roomId,
+              userId: socket.data.userId,
+              status: { in: ['PENDING', 'LOCKED'] }
+            }
           })
 
-          // Emit balance update
-          emitBalanceUpdate(io, socket.data.userId, wallet.balance - room.betAmount, -room.betAmount, `Einsatz: ${room.name}`)
+          if (!existingEscrow) {
+            // No existing escrow: debit balance and create new escrow
+            await prisma.$transaction(async (tx) => {
+              // Debit balance
+              await tx.wallet.update({
+                where: { userId: socket.data.userId },
+                data: { balance: { decrement: room.betAmount } }
+              })
+
+              // Create transaction record
+              await tx.transaction.create({
+                data: {
+                  type: 'BET_PLACED',
+                  amount: room.betAmount,
+                  userId: socket.data.userId,
+                  description: `Einsatz: ${room.name}`
+                }
+              })
+
+              // Create escrow
+              await tx.betEscrow.create({
+                data: {
+                  roomId,
+                  userId: socket.data.userId,
+                  amount: room.betAmount,
+                  status: 'PENDING'
+                }
+              })
+            }, {
+              isolationLevel: 'Serializable',
+              maxWait: 5000,
+              timeout: 10000
+            })
+
+            // Emit balance update
+            emitBalanceUpdate(io, socket.data.userId, wallet.balance - room.betAmount, -room.betAmount, `Einsatz: ${room.name}`)
+          }
+          // If existingEscrow exists, skip debit and creation (already has active escrow)
         } catch (error) {
           console.error('Bet escrow error:', error)
           callback?.({ success: false, error: error.message })
@@ -1427,13 +1439,63 @@ app.prepare().then(() => {
       callback?.({ success: true })
     })
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
       console.log(`Client disconnected: ${socket.data.userId}`)
-      const affectedRooms = roomManager.removeUserFromAllRooms(socket.data.userId)
-      for (const room of affectedRooms) {
+
+      // [ESCROW_DISCONNECT_CLEANUP] - Handle escrow before removing user
+      const userRoomIds = roomManager.getUserRooms(socket.data.userId).map(r => r.id)
+
+      for (const roomId of userRoomIds) {
+        const room = roomManager.getRoom(roomId)
+        if (!room) continue
+
+        if (room.isBetRoom) {
+          const wasPlayer = room.players.some(p => p.userId === socket.data.userId)
+          if (wasPlayer) {
+            try {
+              const escrow = await prisma.betEscrow.findFirst({
+                where: { roomId, userId: socket.data.userId }
+              })
+              if (escrow) {
+                if (escrow.status === 'PENDING') {
+                  // Pre-game: refund
+                  const wallet = await getWalletWithUser(socket.data.userId)
+                  await prisma.$transaction(async (tx) => {
+                    await tx.wallet.update({
+                      where: { userId: socket.data.userId },
+                      data: { balance: { increment: escrow.amount } }
+                    })
+                    await tx.transaction.create({
+                      data: { type: 'BET_REFUND', amount: escrow.amount, userId: socket.data.userId, description: `Einsatz zurueck: ${room.name}` }
+                    })
+                    await tx.betEscrow.update({
+                      where: { id: escrow.id },
+                      data: { status: 'RELEASED', releasedAt: new Date() }
+                    })
+                  }, { isolationLevel: 'Serializable', maxWait: 5000, timeout: 10000 })
+                  emitBalanceUpdate(io, socket.data.userId, wallet.balance + escrow.amount, escrow.amount, `Einsatz zurueck: ${room.name}`)
+                } else if (escrow.status === 'LOCKED') {
+                  // Mid-game: forfeit
+                  await prisma.$transaction(async (tx) => {
+                    await tx.betEscrow.update({ where: { id: escrow.id }, data: { status: 'FORFEITED' } })
+                    await tx.transaction.create({
+                      data: { type: 'BET_FORFEIT', amount: escrow.amount, userId: socket.data.userId, description: `Einsatz verfallen: ${room.name}` }
+                    })
+                  }, { isolationLevel: 'Serializable', maxWait: 5000, timeout: 10000 })
+                }
+              }
+            } catch (error) {
+              console.error('Disconnect escrow error:', error)
+            }
+          }
+        }
+
         sendSystemMessage(room.id, io, `${socket.data.displayName} hat den Raum verlassen`)
         io.to(room.id).emit('room:player-left', { userId: socket.data.userId })
       }
+
+      // Now remove from all rooms
+      roomManager.removeUserFromAllRooms(socket.data.userId)
       io.emit('room:list-update', roomManager.getPublicRooms())
     })
   })
