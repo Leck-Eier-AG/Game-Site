@@ -7,9 +7,10 @@ import { WaitingRoom } from '@/components/game/WaitingRoom'
 import { GameBoard } from '@/components/game/GameBoard'
 import type { GameState, RoomInfo } from '@/types/game'
 import { useTranslations } from 'next-intl'
-import { Trophy, ArrowLeft } from 'lucide-react'
+import { Trophy, ArrowLeft, Send } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { TransferDialog } from '@/components/wallet/transfer-dialog'
 
 interface RoomData extends RoomInfo {
   players: { userId: string; displayName: string; isReady: boolean }[]
@@ -181,9 +182,26 @@ export default function GameRoomPage() {
                       )}
                     </div>
                   </div>
-                  <span className={`text-xl font-bold ${isWinner ? 'text-yellow-300' : 'text-gray-300'}`}>
-                    {player.total}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xl font-bold ${isWinner ? 'text-yellow-300' : 'text-gray-300'}`}>
+                      {player.total}
+                    </span>
+                    {!isMe && (
+                      <TransferDialog
+                        recipientId={player.userId}
+                        recipientName={player.displayName}
+                        trigger={
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="border-green-600 text-green-600 hover:bg-green-600/10"
+                          >
+                            <Send className="h-4 w-4" />
+                          </Button>
+                        }
+                      />
+                    )}
+                  </div>
                 </div>
               )
             })}
@@ -221,6 +239,8 @@ export default function GameRoomPage() {
         currentUserId={userId || ''}
         hostId={room.hostId}
         socket={socket}
+        isBetRoom={room.isBetRoom}
+        betAmount={room.betAmount}
       />
     )
   }

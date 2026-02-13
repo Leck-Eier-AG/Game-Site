@@ -6,8 +6,9 @@ import type { Socket } from 'socket.io-client'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Check, X, Copy, Crown } from 'lucide-react'
+import { Check, X, Copy, Crown, Send, Coins } from 'lucide-react'
 import type { GameState } from '@/types/game'
+import { TransferDialog } from '@/components/wallet/transfer-dialog'
 
 interface RoomData {
   id: string
@@ -22,6 +23,8 @@ interface RoomData {
   turnTimer?: number
   afkThreshold?: number
   gameState?: GameState
+  isBetRoom: boolean
+  betAmount: number
 }
 
 interface WaitingRoomProps {
@@ -103,6 +106,19 @@ export function WaitingRoom({ room, currentUserId, socket }: WaitingRoomProps) {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Bet Room Info */}
+            {room.isBetRoom && (
+              <div className="rounded-lg bg-green-600/10 border border-green-600/20 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Coins className="h-5 w-5 text-green-500" />
+                  <p className="text-sm font-semibold text-green-400">Wett-Raum</p>
+                </div>
+                <p className="text-sm text-gray-300">
+                  Einsatz: <span className="font-bold text-green-400">{room.betAmount}</span> Chips pro Spieler
+                </p>
+              </div>
+            )}
+
             {/* Room Settings */}
             <div className="grid grid-cols-2 gap-4 rounded-lg bg-gray-900/50 p-4">
               <div>
@@ -182,15 +198,33 @@ export function WaitingRoom({ room, currentUserId, socket }: WaitingRoomProps) {
                       </p>
                     </div>
                   </div>
-                  {isHost && player.userId !== room.hostId && (
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => handleKickPlayer(player.userId)}
-                    >
-                      {t('room.kickPlayer')}
-                    </Button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {player.userId !== currentUserId && (
+                      <TransferDialog
+                        recipientId={player.userId}
+                        recipientName={player.displayName}
+                        trigger={
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="border-green-600 text-green-600 hover:bg-green-600/10"
+                          >
+                            <Send className="h-4 w-4 mr-1" />
+                            Chips senden
+                          </Button>
+                        }
+                      />
+                    )}
+                    {isHost && player.userId !== room.hostId && (
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => handleKickPlayer(player.userId)}
+                      >
+                        {t('room.kickPlayer')}
+                      </Button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
