@@ -113,10 +113,20 @@ Plans:
   5. User can play Roulette with other players at multiplayer table
   6. All game outcomes use server-side cryptographic random number generation
   7. Betting works correctly for all games with proper escrow and payout
-**Plans**: TBD
+**Plans**: 11 plans
 
 Plans:
-- TBD during phase planning
+- [ ] 04-01-PLAN.md — Shared casino foundation (card types, deck utilities, SVG card, FeltTable, ChipStack, sound manager)
+- [ ] 04-02-PLAN.md — Game type infrastructure (lobby game selector, server routing, game room page routing)
+- [ ] 04-03-PLAN.md — Blackjack state machine with engine-blackjack wrapper (TDD)
+- [ ] 04-04-PLAN.md — Roulette state machine, bet validator, and European wheel config (TDD)
+- [ ] 04-05-PLAN.md — Poker state machine and hand evaluator with poker-evaluator-ts (TDD)
+- [ ] 04-06-PLAN.md — Poker pot calculator with side pot support (TDD)
+- [ ] 04-07-PLAN.md — Blackjack server handlers and UI components (full integration)
+- [ ] 04-08-PLAN.md — Roulette server handlers and UI components (full integration)
+- [ ] 04-09-PLAN.md — Poker server handlers with personalized state and buy-in/cashout
+- [ ] 04-10-PLAN.md — Poker UI components (oval table, player seats, community cards, betting controls)
+- [ ] 04-11-PLAN.md — Full Phase 4 verification checkpoint
 
 ### Phase 5: Polish & Community
 **Goal**: Enhanced user experience with statistics, themes, and moderation tools
@@ -144,9 +154,9 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 | 1. Foundation & Infrastructure | 6/6 | Complete | 2026-02-11 |
 | 2. Core Game Engine (Kniffel MVP) | 10/11 | In progress | - |
 | 3. Virtual Currency & Betting | 13/15 | In progress | - |
-| 4. Additional Games | 0/TBD | Not started | - |
+| 4. Additional Games | 0/11 | Not started | - |
 | 5. Polish & Community | 0/TBD | Not started | - |
 
 ---
 *Roadmap created: 2026-02-11*
-*Last updated: 2026-02-13 (Phase 3 gap closure round 3 planned: 03-15 for BetConfirmation wiring into join flows)*
+*Last updated: 2026-02-13 (Phase 4 planned: 11 plans in 6 waves for Poker, Blackjack, Roulette)*
