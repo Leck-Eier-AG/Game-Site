@@ -456,10 +456,12 @@ function handlePlayerDisconnect(
   const newPlayer = { ...newPlayers[playerIndex] };
   newPlayer.isConnected = false;
 
-  // Auto-stand all hands that are currently 'playing'
-  // (blackjack, busted, stood, surrendered hands stay as-is)
+  // Auto-stand all hands that are currently 'playing' or 'blackjack'
+  // (busted and surrendered hands stay as-is)
   newPlayer.hands = newPlayer.hands.map(hand =>
-    hand.status === 'playing' ? { ...hand, status: 'stood' as HandStatus } : { ...hand }
+    (hand.status === 'playing' || hand.status === 'blackjack')
+      ? { ...hand, status: 'stood' as HandStatus }
+      : { ...hand }
   );
 
   newPlayers[playerIndex] = newPlayer;
