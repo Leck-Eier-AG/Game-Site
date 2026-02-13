@@ -312,7 +312,7 @@ describe('applyAction - SPIN', () => {
       players: [{ userId: 'user1', displayName: 'Alice', bets: [], totalBetAmount: 0, isConnected: true }],
       currentRound: 1,
       winningNumber: null,
-      resultHistory: Array.from({ length: 20 }, (_, i) => i), // Full history
+      resultHistory: Array.from({ length: 20 }, (_, i) => i), // Full history: [0, 1, 2, ..., 19]
       spinTimerSec: 30,
       isManualSpin: true
     }
@@ -326,7 +326,7 @@ describe('applyAction - SPIN', () => {
     if (!(result instanceof Error)) {
       expect(result.resultHistory).toHaveLength(20)
       expect(result.resultHistory[0]).toBe(7) // Most recent
-      expect(result.resultHistory[19]).toBe(1) // Oldest is pushed out
+      expect(result.resultHistory[19]).toBe(18) // Oldest (19 gets pushed out)
     }
   })
 
