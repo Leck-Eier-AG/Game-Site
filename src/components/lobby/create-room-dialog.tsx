@@ -205,7 +205,7 @@ export function CreateRoomDialog({ open, onOpenChange }: CreateRoomDialogProps) 
                   <SelectItem value="kniffel">🎲 Kniffel</SelectItem>
                   <SelectItem value="blackjack">🃏 Blackjack</SelectItem>
                   <SelectItem value="roulette">🎰 Roulette</SelectItem>
-                  <SelectItem value="poker">♠ Poker</SelectItem>
+                  <SelectItem value="poker" disabled>♠ Poker (Coming Soon)</SelectItem>
                 </SelectContent>
               </Select>
             </div>

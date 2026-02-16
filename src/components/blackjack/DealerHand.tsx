@@ -81,7 +81,7 @@ export function DealerHand({ cards, hidden, handValue, phase }: DealerHandProps)
                 suit={card.suit}
                 faceDown={shouldBeFaceDown}
                 size="md"
-                className={disableFlipTransition && '!transition-none'}
+                className={disableFlipTransition ? '!transition-none' : undefined}
                 style={{
                   ...(disableFlipTransition ? { transitionDuration: '0s !important' } : {})
                 }}
