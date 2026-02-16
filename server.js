@@ -457,7 +457,7 @@ async function autoPlay(roomId, io) {
               const player = result.players.find(p => p.userId === userId)
               const position = rankings.find(r => r.userIds.includes(userId))?.position || 0
 
-              await tx.wallet.update({
+              const updatedWallet = await tx.wallet.update({
                 where: { userId },
                 data: { balance: { increment: amount } }
               })
@@ -471,8 +471,8 @@ async function autoPlay(roomId, io) {
                 }
               })
 
-              // Emit balance update
-              emitBalanceUpdate(io, userId, 0, amount, `${room.name} gewonnen`)
+              // Emit balance update with correct new balance
+              emitBalanceUpdate(io, userId, updatedWallet.balance, amount, `${room.name} gewonnen`)
             }
           }
 
@@ -1354,7 +1354,7 @@ app.prepare().then(() => {
                   const player = result.players.find(p => p.userId === userId)
                   const position = rankings.find(r => r.userIds.includes(userId))?.position || 0
 
-                  await tx.wallet.update({
+                  const updatedWallet = await tx.wallet.update({
                     where: { userId },
                     data: { balance: { increment: amount } }
                   })
@@ -1368,8 +1368,8 @@ app.prepare().then(() => {
                     }
                   })
 
-                  // Emit balance update
-                  emitBalanceUpdate(io, userId, 0, amount, `${room.name} gewonnen`)
+                  // Emit balance update with correct new balance
+                  emitBalanceUpdate(io, userId, updatedWallet.balance, amount, `${room.name} gewonnen`)
                 }
               }
 

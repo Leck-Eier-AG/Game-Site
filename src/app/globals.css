@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "../components/casino/casino-animations.css";
+@import "../components/poker/poker-animations.css";
 
 @theme {
   --color-background: hsl(240 10% 3.9%);

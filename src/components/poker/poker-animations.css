@@ -1,0 +1,141 @@
+/* Poker-specific animation keyframes */
+
+/* Active player glowing ring animation */
+@keyframes active-glow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(251, 191, 36, 0.6), 0 0 40px rgba(251, 191, 36, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(251, 191, 36, 0.8), 0 0 60px rgba(251, 191, 36, 0.6);
+  }
+}
+
+/* Bet chips slide to pot animation */
+@keyframes chips-to-pot {
+  0% {
+    transform: translate(0, 0) scale(1);
+    opacity: 1;
+  }
+  40% {
+    transform: translate(var(--pot-x, 0), var(--pot-y, -50px)) scale(0.9);
+    opacity: 0.8;
+  }
+  100% {
+    transform: translate(var(--pot-x, 0), var(--pot-y, -50px)) scale(0.5);
+    opacity: 0;
+  }
+}
+
+/* Pot chips fly to winner animation */
+@keyframes pot-to-winner {
+  0% {
+    transform: translate(0, 0) scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: translate(var(--winner-x, 0), calc(var(--winner-y, 0) / 2)) scale(0.8);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(var(--winner-x, 0), var(--winner-y, 0)) scale(0.5);
+    opacity: 0;
+  }
+}
+
+/* Circular timer countdown animation */
+@keyframes timer-countdown {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: var(--timer-circumference, 251.2);
+  }
+}
+
+/* Hand reveal at showdown */
+@keyframes hand-reveal {
+  0% {
+    transform: translateY(-20px) rotateX(90deg);
+    opacity: 0;
+  }
+  60% {
+    transform: translateY(5px) rotateX(-10deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0) rotateX(0deg);
+    opacity: 1;
+  }
+}
+
+/* Card dealing from deck position */
+@keyframes poker-card-deal {
+  0% {
+    transform: translateX(var(--deck-offset-x, -400px)) translateY(var(--deck-offset-y, -200px)) scale(0.7) rotate(-15deg);
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(0) translateY(0) scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+/* Bet badge pulse */
+@keyframes bet-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 0.9;
+  }
+}
+
+/* Count-up number animation */
+@keyframes count-up {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Utility classes */
+.animate-active-glow {
+  animation: active-glow 2s ease-in-out infinite;
+}
+
+.animate-chips-to-pot {
+  animation: chips-to-pot 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.animate-pot-to-winner {
+  animation: pot-to-winner 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.animate-timer-countdown {
+  animation: timer-countdown linear forwards;
+}
+
+.animate-hand-reveal {
+  animation: hand-reveal 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.animate-poker-card-deal {
+  animation: poker-card-deal 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+.animate-bet-pulse {
+  animation: bet-pulse 1s ease-in-out infinite;
+}
+
+.animate-count-up {
+  animation: count-up 0.3s ease-out forwards;
+}
