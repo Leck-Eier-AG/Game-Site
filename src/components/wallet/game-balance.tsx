@@ -7,15 +7,18 @@ import { cn } from '@/lib/utils';
 
 interface GameBalanceProps {
   frozen?: boolean;
+  overrideBalance?: number | null;
 }
 
 /**
  * Compact balance display for use inside game UIs.
  * Shows current balance with flash animation on changes.
  * When `frozen` is true, holds the displayed value until unfrozen.
+ * When `overrideBalance` is provided, uses that instead of socket balance.
  */
-export function GameBalance({ frozen = false }: GameBalanceProps) {
-  const { balance } = useSocket();
+export function GameBalance({ frozen = false, overrideBalance }: GameBalanceProps) {
+  const { balance: socketBalance } = useSocket();
+  const balance = overrideBalance !== undefined ? overrideBalance : socketBalance;
   const displayRef = useRef<number | null>(null);
   const [displayBalance, setDisplayBalance] = useState<number | null>(null);
   const [flash, setFlash] = useState<'positive' | 'negative' | null>(null);

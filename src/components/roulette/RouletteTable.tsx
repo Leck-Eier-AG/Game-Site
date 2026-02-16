@@ -11,6 +11,7 @@ import type { RouletteGameState, RouletteBet } from '@/lib/game/roulette/state-m
 import type { RouletteBetType } from '@/lib/game/roulette/bet-validator';
 import { getNumberColor } from '@/lib/game/roulette/wheel';
 import type { Socket } from 'socket.io-client';
+import { useSocket } from '@/lib/socket/provider';
 import { GameBalance } from '@/components/wallet/game-balance';
 import { TransferDialog } from '@/components/wallet/transfer-dialog';
 import { LogOut, Send } from 'lucide-react';
@@ -35,14 +36,48 @@ export function RouletteTable({
   isHost,
 }: RouletteTableProps) {
   const router = useRouter();
+  const { balance: realBalance } = useSocket();
   const [isSpinning, setIsSpinning] = useState(false);
   const [showResultModal, setShowResultModal] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [displayBalance, setDisplayBalance] = useState<number | null>(null);
   const prevWinningNumberRef = useRef<number | null>(null);
   const autoNextRoundRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingWinBalanceRef = useRef<number | null>(null);
 
   const currentPlayer = gameState.players.find((p) => p.userId === currentUserId);
   const playerBets = currentPlayer?.bets || [];
+
+  // Initialize display balance from real balance
+  useEffect(() => {
+    if (displayBalance === null && realBalance !== null) {
+      setDisplayBalance(realBalance);
+    }
+  }, [realBalance, displayBalance]);
+
+  // Track balance locally to delay win updates until after wheel animation
+  useEffect(() => {
+    const handleBalanceUpdate = (data: {newBalance?: number; balance?: number; change?: number; description?: string}) => {
+      const newBal = data.newBalance ?? data.balance;
+      if (newBal == null) return;
+
+      // ALWAYS queue roulette win updates - show them only after wheel stops
+      if (data.description?.includes('Roulette Gewinn')) {
+        pendingWinBalanceRef.current = newBal;
+        // Don't update displayBalance yet - wait for spin animation to complete
+        return;
+      }
+
+      // For bet placements and other updates, show immediately
+      setDisplayBalance(newBal);
+    };
+
+    socket.on('balance:updated', handleBalanceUpdate);
+
+    return () => {
+      socket.off('balance:updated', handleBalanceUpdate);
+    };
+  }, [socket]);
 
   // Trigger spin animation for ALL users when a new winning number arrives
   useEffect(() => {
@@ -135,6 +170,15 @@ export function RouletteTable({
     setIsSpinning(false);
     setShowResultModal(true);
 
+    // Now show the win balance that was queued during the spin
+    if (pendingWinBalanceRef.current !== null) {
+      setDisplayBalance(pendingWinBalanceRef.current);
+      pendingWinBalanceRef.current = null;
+    } else {
+      // No pending win, just clear override to show real balance
+      setDisplayBalance(null);
+    }
+
     // Auto-advance to next round after 5 seconds
     autoNextRoundRef.current = setTimeout(() => {
       socket.emit('roulette:next-round', { roomId }, (response: any) => {
@@ -226,7 +270,7 @@ export function RouletteTable({
               {bettingDisabledReason}
             </div>
           )}
-          <GameBalance frozen={isSpinning} />
+          <GameBalance overrideBalance={displayBalance} />
           {isHost && gameState.phase === 'betting' && (
             <Button
               onClick={handleSpin}
