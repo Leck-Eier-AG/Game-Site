@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { Coins, Dices, CircleDot, Spade } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
-import { RoomSettings, GameType } from '@/types/game'
+import { RoomSettings, GameType, KniffelMode } from '@/types/game'
 
 interface CreateRoomDialogProps {
   open: boolean
@@ -28,6 +28,7 @@ export function CreateRoomDialog({ open, onOpenChange }: CreateRoomDialogProps) 
   const { socket } = useSocket()
 
   const [gameType, setGameType] = useState<GameType>('kniffel')
+  const [kniffelMode, setKniffelMode] = useState<KniffelMode>('classic')
   const [roomName, setRoomName] = useState('')
   const [maxPlayers, setMaxPlayers] = useState('4')
   const [turnTimer, setTurnTimer] = useState('60')
@@ -50,6 +51,7 @@ export function CreateRoomDialog({ open, onOpenChange }: CreateRoomDialogProps) 
   const [startingBlinds, setStartingBlinds] = useState('10')
 
   const isCasinoGame = CASINO_GAMES.includes(gameType)
+  const isFixedTeamSize = gameType === 'kniffel' && (kniffelMode === 'team2v2' || kniffelMode === 'team3v3')
 
   // Auto-set isBetRoom for casino games
   useEffect(() => {
@@ -57,6 +59,12 @@ export function CreateRoomDialog({ open, onOpenChange }: CreateRoomDialogProps) 
       setIsBetRoom(true)
     }
   }, [gameType, isCasinoGame])
+
+  useEffect(() => {
+    if (gameType !== 'kniffel') return
+    if (kniffelMode === 'team2v2') setMaxPlayers('4')
+    if (kniffelMode === 'team3v3') setMaxPlayers('6')
+  }, [gameType, kniffelMode])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -106,6 +114,7 @@ export function CreateRoomDialog({ open, onOpenChange }: CreateRoomDialogProps) 
     const settings: RoomSettings = {
       name: roomName.trim(),
       gameType,
+      kniffelMode: gameType === 'kniffel' ? kniffelMode : undefined,
       maxPlayers: parseInt(maxPlayers, 10),
       isPrivate,
       turnTimer: parseInt(turnTimer, 10),
@@ -141,6 +150,7 @@ export function CreateRoomDialog({ open, onOpenChange }: CreateRoomDialogProps) 
         onOpenChange(false)
         // Reset form
         setGameType('kniffel')
+        setKniffelMode('classic')
         setRoomName('')
         setMaxPlayers('4')
         setTurnTimer('60')
@@ -232,7 +242,7 @@ export function CreateRoomDialog({ open, onOpenChange }: CreateRoomDialogProps) 
               <Label htmlFor="maxPlayers" className="text-white">
                 {t('room.maxPlayers')}
               </Label>
-              <Select value={maxPlayers} onValueChange={setMaxPlayers}>
+              <Select value={maxPlayers} onValueChange={setMaxPlayers} disabled={isFixedTeamSize}>
                 <SelectTrigger id="maxPlayers" className="bg-zinc-800 border-zinc-700 text-white">
                   <SelectValue />
                 </SelectTrigger>
@@ -249,6 +259,27 @@ export function CreateRoomDialog({ open, onOpenChange }: CreateRoomDialogProps) 
             {/* Game-specific settings */}
             {gameType === 'kniffel' && (
               <>
+                <div className="space-y-2">
+                  <Label htmlFor="kniffelMode" className="text-white">
+                    Modus
+                  </Label>
+                  <Select value={kniffelMode} onValueChange={(val) => setKniffelMode(val as KniffelMode)}>
+                    <SelectTrigger id="kniffelMode" className="bg-zinc-800 border-zinc-700 text-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="classic">Klassisch (Jeder gegen jeden)</SelectItem>
+                      <SelectItem value="team2v2">Team 2v2</SelectItem>
+                      <SelectItem value="team3v3">Team 3v3</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {isFixedTeamSize && (
+                    <p className="text-xs text-gray-400">
+                      Team-Modi verwenden feste Spielerzahlen: 2v2 = 4, 3v3 = 6
+                    </p>
+                  )}
+                </div>
+
                 {/* Turn Timer */}
                 <div className="space-y-2">
                   <Label htmlFor="turnTimer" className="text-white">

@@ -47,6 +47,14 @@ export function RoomCard({ room, onJoin, currentUserId }: RoomCardProps) {
   const isRoomFull = room.currentPlayers >= room.maxPlayers
   const canJoin = room.status === 'waiting' && !isRoomFull
   const canSpectate = room.status === 'playing'
+  const kniffelModeLabel =
+    room.gameType === 'kniffel'
+      ? room.kniffelMode === 'team2v2'
+        ? 'Team 2v2'
+        : room.kniffelMode === 'team3v3'
+          ? 'Team 3v3'
+          : 'Klassisch'
+      : null
 
   // Calculate time since creation
   const getTimeSince = () => {
@@ -83,6 +91,11 @@ export function RoomCard({ room, onJoin, currentUserId }: RoomCardProps) {
             <Badge className={statusBadge.color} variant="outline">
               {statusBadge.text}
             </Badge>
+            {kniffelModeLabel && (
+              <Badge variant="outline" className="bg-cyan-500/10 text-cyan-400 border-cyan-500/20">
+                {kniffelModeLabel}
+              </Badge>
+            )}
             {room.isBetRoom ? (
               <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20 flex items-center gap-1">
                 <Coins className="h-3 w-3" />

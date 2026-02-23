@@ -75,6 +75,7 @@ class RoomManager {
       hostId,
       hostName,
       gameType: settings.gameType || 'kniffel',
+      kniffelMode: settings.kniffelMode || 'classic',
       status: 'waiting',
       isPrivate: settings.isPrivate || false,
       maxPlayers: settings.maxPlayers || 6,
@@ -88,7 +89,7 @@ class RoomManager {
       pokerSettings: settings.pokerSettings || null,
       blackjackSettings: settings.blackjackSettings || null,
       rouletteSettings: settings.rouletteSettings || null,
-      players: [{ userId: hostId, displayName: hostName, isReady: false }],
+      players: [{ userId: hostId, displayName: hostName, isReady: false, teamId: null }],
       spectators: [],
       gameState: null,
       pauseVotes: null,
@@ -123,7 +124,7 @@ class RoomManager {
       return { error: 'Room is full' }
     }
 
-    room.players.push({ userId, displayName, isReady: false })
+    room.players.push({ userId, displayName, isReady: false, teamId: null })
     this._trackUser(userId, roomId)
     return { room }
   }
@@ -163,6 +164,7 @@ class RoomManager {
         name: r.name,
         hostName: r.hostName,
         gameType: r.gameType,
+        kniffelMode: r.kniffelMode || 'classic',
         status: r.status,
         maxPlayers: r.maxPlayers,
         currentPlayers: r.players.length,
@@ -229,6 +231,67 @@ const roomManager = new RoomManager()
 
 function getMajorityRequired(total) {
   return Math.floor(total / 2) + 1
+}
+
+function getKniffelTeamConfig(kniffelMode) {
+  if (kniffelMode === 'team2v2') {
+    return { perTeam: 2, total: 4 }
+  }
+  if (kniffelMode === 'team3v3') {
+    return { perTeam: 3, total: 6 }
+  }
+  return null
+}
+
+function buildKniffelTeams(players, kniffelMode) {
+  const cfg = getKniffelTeamConfig(kniffelMode)
+  if (!cfg) return { teams: [] }
+
+  if (players.length !== cfg.total) {
+    return { error: `Teammodus ${kniffelMode === 'team2v2' ? '2v2' : '3v3'} benötigt genau ${cfg.total} Spieler` }
+  }
+
+  const teamAPlayers = players.filter(player => player.teamId === 'team-a')
+  const teamBPlayers = players.filter(player => player.teamId === 'team-b')
+
+  if (teamAPlayers.length !== cfg.perTeam || teamBPlayers.length !== cfg.perTeam) {
+    return { error: 'Teams sind nicht vollständig besetzt' }
+  }
+
+  if (players.some(player => !player.teamId)) {
+    return { error: 'Nicht alle Spieler haben ein Team gewählt' }
+  }
+
+  return {
+    teams: [
+      { id: 'team-a', name: 'Team A', memberUserIds: teamAPlayers.map(player => player.userId) },
+      { id: 'team-b', name: 'Team B', memberUserIds: teamBPlayers.map(player => player.userId) }
+    ]
+  }
+}
+
+function buildKniffelTeamSummary(gameState) {
+  if (!gameState?.teams?.length) return null
+
+  const teamScores = gameState.teams.map(team => {
+    const players = gameState.players.filter(player => team.memberUserIds.includes(player.userId))
+    const total = players.reduce((sum, player) => sum + calculateTotalScore(player.scoresheet), 0)
+    return {
+      teamId: team.id,
+      teamName: team.name,
+      total,
+      members: players.map(player => ({
+        userId: player.userId,
+        displayName: player.displayName,
+        total: calculateTotalScore(player.scoresheet)
+      }))
+    }
+  }).sort((a, b) => b.total - a.total)
+
+  return {
+    winnerTeamId: teamScores[0]?.teamId || null,
+    teamScores
+  }
 }
 
 // Helper: Build rankings from game state for payout calculation
@@ -515,7 +578,14 @@ async function autoPlay(roomId, io) {
     }
 
     room.rematchVotes = { votedYes: [], votedNo: [], total: result.players.length, required: Math.ceil(result.players.length / 2) }
-    io.to(roomId).emit('game:ended', { winner: result.winner, scores: result.players.map(p => ({ userId: p.userId, displayName: p.displayName, total: calculateTotalScore(p.scoresheet) })), payouts: payoutData })
+    const teamSummary = room.gameType === 'kniffel' ? buildKniffelTeamSummary(result) : null
+    io.to(roomId).emit('game:ended', {
+      winner: result.winner,
+      winnerTeamId: teamSummary?.winnerTeamId || null,
+      teamScores: teamSummary?.teamScores || null,
+      scores: result.players.map(p => ({ userId: p.userId, displayName: p.displayName, total: calculateTotalScore(p.scoresheet) })),
+      payouts: payoutData
+    })
     io.emit('room:list-update', roomManager.getPublicRooms())
   } else {
     result.turnStartedAt = Date.now()
@@ -577,7 +647,13 @@ async function kickPlayerAFK(room, roomId, player, io) {
     if (winner) {
       sendSystemMessage(roomId, io, `${winner.displayName} gewinnt! Alle anderen Spieler waren AFK.`)
     }
-    io.to(roomId).emit('game:ended', { winner: room.gameState.winner, scores: room.gameState.players.map(p => ({ userId: p.userId, displayName: p.displayName, total: calculateTotalScore(p.scoresheet) })) })
+    const teamSummary = room.gameType === 'kniffel' ? buildKniffelTeamSummary(room.gameState) : null
+    io.to(roomId).emit('game:ended', {
+      winner: room.gameState.winner,
+      winnerTeamId: teamSummary?.winnerTeamId || null,
+      teamScores: teamSummary?.teamScores || null,
+      scores: room.gameState.players.map(p => ({ userId: p.userId, displayName: p.displayName, total: calculateTotalScore(p.scoresheet) }))
+    })
     return
   }
 
@@ -755,6 +831,17 @@ app.prepare().then(() => {
       try {
         if (!settings || !settings.name) {
           return callback({ success: false, error: 'Invalid room settings' })
+        }
+
+        if (settings.gameType === 'kniffel') {
+          const kniffelMode = settings.kniffelMode || 'classic'
+          settings.kniffelMode = kniffelMode
+          if (kniffelMode === 'team2v2' && settings.maxPlayers !== 4) {
+            return callback({ success: false, error: '2v2 benötigt genau 4 Spieler' })
+          }
+          if (kniffelMode === 'team3v3' && settings.maxPlayers !== 6) {
+            return callback({ success: false, error: '3v3 benötigt genau 6 Spieler' })
+          }
         }
 
         // Validate bet settings
@@ -954,7 +1041,7 @@ app.prepare().then(() => {
         const promoteToPlayer = () => {
           room.spectators = room.spectators.filter(id => id !== socket.data.userId)
           if (!room.players.some(p => p.userId === socket.data.userId)) {
-            room.players.push({ userId: socket.data.userId, displayName: socket.data.displayName, isReady: true })
+            room.players.push({ userId: socket.data.userId, displayName: socket.data.displayName, isReady: true, teamId: null })
           }
           result.spectator = false
           lateJoinPromoted = true
@@ -1135,6 +1222,47 @@ app.prepare().then(() => {
       callback?.({ success: true })
     })
 
+    socket.on('room:select-team', ({ roomId, teamId }, callback) => {
+      const room = roomManager.getRoom(roomId)
+      if (!room || room.status !== 'waiting') {
+        callback?.({ error: 'Raum nicht in Wartestatus' })
+        return
+      }
+      if (room.gameType !== 'kniffel') {
+        callback?.({ error: 'Teamwahl nur bei Kniffel verfügbar' })
+        return
+      }
+
+      const cfg = getKniffelTeamConfig(room.kniffelMode || 'classic')
+      if (!cfg) {
+        callback?.({ error: 'In diesem Modus gibt es keine Teams' })
+        return
+      }
+      if (teamId !== 'team-a' && teamId !== 'team-b') {
+        callback?.({ error: 'Ungültiges Team' })
+        return
+      }
+
+      const playerIndex = room.players.findIndex(player => player.userId === socket.data.userId)
+      if (playerIndex === -1) {
+        callback?.({ error: 'Spieler nicht im Raum' })
+        return
+      }
+
+      const occupiedSeats = room.players.filter(
+        player => player.userId !== socket.data.userId && player.teamId === teamId
+      ).length
+
+      if (occupiedSeats >= cfg.perTeam) {
+        callback?.({ error: `${teamId === 'team-a' ? 'Team A' : 'Team B'} ist voll` })
+        return
+      }
+
+      room.players[playerIndex].teamId = teamId
+      io.to(roomId).emit('room:update', room)
+      callback?.({ success: true, teamId })
+    })
+
     // Handle state recovery request
     // Handle auth user info request
     socket.on('auth:get-user', () => {
@@ -1216,6 +1344,11 @@ app.prepare().then(() => {
       const player = room.players.find(p => p.userId === socket.data.userId)
       if (!player) {
         callback?.({ error: 'Not in room' })
+        return
+      }
+      const teamCfg = room.gameType === 'kniffel' ? getKniffelTeamConfig(room.kniffelMode || 'classic') : null
+      if (teamCfg && !player.teamId) {
+        callback?.({ error: 'Bitte zuerst ein Team wählen' })
         return
       }
       player.isReady = !player.isReady
@@ -1579,8 +1712,11 @@ app.prepare().then(() => {
         }
 
         io.to(roomId).emit('room:update', room)
+        const teamSummary = room.gameType === 'kniffel' ? buildKniffelTeamSummary(result) : null
         io.to(roomId).emit('game:ended', {
           winner: result.winner,
+          winnerTeamId: teamSummary?.winnerTeamId || null,
+          teamScores: teamSummary?.teamScores || null,
           scores: result.players.map(p => ({
             userId: p.userId,
             displayName: p.displayName,
@@ -1616,6 +1752,7 @@ app.prepare().then(() => {
       const minPlayers = isHouseGame ? 1 : 2
 
       let gamePlayers
+      let pendingSpectators = []
       if (force) {
         if (room.players.length < minPlayers) {
           callback?.({ error: minPlayers === 1 ? 'Need at least 1 player' : 'Need at least 2 players' })
@@ -1628,13 +1765,36 @@ app.prepare().then(() => {
           callback?.({ error: minPlayers === 1 ? 'Need at least 1 ready player' : 'Need at least 2 ready players' })
           return
         }
-        // Move non-ready players to spectators
-        const notReady = room.players.filter(p => !p.isReady)
-        for (const p of notReady) {
-          room.spectators.push(p.userId)
-          sendSystemMessage(roomId, io, `${p.displayName} schaut zu (nicht bereit)`)
-        }
+        pendingSpectators = room.players.filter(p => !p.isReady)
         gamePlayers = readyPlayers
+      }
+
+      if (room.gameType === 'kniffel') {
+        const kniffelMode = room.kniffelMode || 'classic'
+        const cfg = getKniffelTeamConfig(kniffelMode)
+        if (cfg) {
+          const teamAPlayers = gamePlayers.filter(player => player.teamId === 'team-a')
+          const teamBPlayers = gamePlayers.filter(player => player.teamId === 'team-b')
+          if (gamePlayers.length !== cfg.total) {
+            callback?.({ error: `Für ${kniffelMode === 'team2v2' ? '2v2' : '3v3'} werden genau ${cfg.total} Spieler benötigt` })
+            return
+          }
+          if (teamAPlayers.length !== cfg.perTeam || teamBPlayers.length !== cfg.perTeam) {
+            callback?.({ error: 'Teams sind nicht vollständig besetzt' })
+            return
+          }
+          if (gamePlayers.some(player => !player.teamId)) {
+            callback?.({ error: 'Nicht alle Spieler haben ein Team gewählt' })
+            return
+          }
+        }
+      }
+
+      if (pendingSpectators.length > 0) {
+        for (const spectator of pendingSpectators) {
+          room.spectators.push(spectator.userId)
+          sendSystemMessage(roomId, io, `${spectator.displayName} schaut zu (nicht bereit)`)
+        }
       }
 
       room.players = gamePlayers
@@ -1646,10 +1806,19 @@ app.prepare().then(() => {
       }))
 
       if (room.gameType === 'kniffel') {
+        const kniffelMode = room.kniffelMode || 'classic'
+        const teamSetup = buildKniffelTeams(gamePlayers, kniffelMode)
+        if (teamSetup.error) {
+          callback?.({ error: teamSetup.error })
+          return
+        }
+
         // Use imported createInitialState from state-machine.ts for Kniffel
         const settings = {
           turnTimer: room.turnTimer,
-          afkThreshold: room.afkThreshold
+          afkThreshold: room.afkThreshold,
+          kniffelMode,
+          teams: teamSetup.teams
         }
         room.gameState = createInitialState(playerData, settings)
         room.gameState.phase = 'rolling'

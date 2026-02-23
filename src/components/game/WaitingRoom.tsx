@@ -10,6 +10,7 @@ import { Check, X, Copy, Crown, Send, Coins, LogOut } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import type { GameState } from '@/types/game'
 import { TransferDialog } from '@/components/wallet/transfer-dialog'
+import { toast } from 'sonner'
 
 interface RoomData {
   id: string
@@ -17,10 +18,11 @@ interface RoomData {
   hostId: string
   hostName: string
   gameType?: string
+  kniffelMode?: 'classic' | 'team2v2' | 'team3v3'
   status: 'waiting' | 'playing' | 'ended'
   isPrivate: boolean
   maxPlayers: number
-  players: { userId: string; displayName: string; isReady: boolean }[]
+  players: { userId: string; displayName: string; isReady: boolean; teamId?: string | null }[]
   spectators: string[]
   turnTimer?: number
   afkThreshold?: number
@@ -53,11 +55,27 @@ export function WaitingRoom({ room, currentUserId, socket }: WaitingRoomProps) {
   const allReady = players.length >= minPlayers && readyCount === players.length
   const currentPlayer = players.find(p => p.userId === currentUserId)
   const isReady = currentPlayer?.isReady || false
+  const isTeamMode = room.gameType === 'kniffel' && (room.kniffelMode === 'team2v2' || room.kniffelMode === 'team3v3')
+  const teamSize = room.kniffelMode === 'team2v2' ? 2 : room.kniffelMode === 'team3v3' ? 3 : 0
+  const teamAPlayers = players.filter(p => p.teamId === 'team-a')
+  const teamBPlayers = players.filter(p => p.teamId === 'team-b')
+  const teamsFilled = !isTeamMode || (teamAPlayers.length === teamSize && teamBPlayers.length === teamSize)
+  const allAssigned = !isTeamMode || players.every(p => p.teamId === 'team-a' || p.teamId === 'team-b')
+  const canStart = allReady && teamsFilled && allAssigned
+  const hasSelectedTeam = !isTeamMode || currentPlayer?.teamId === 'team-a' || currentPlayer?.teamId === 'team-b'
 
   const handleToggleReady = () => {
     socket.emit('game:player-ready', {
       roomId: room.id,
       isReady: !isReady
+    })
+  }
+
+  const handleSelectTeam = (teamId: 'team-a' | 'team-b') => {
+    socket.emit('room:select-team', { roomId: room.id, teamId }, (response: { success?: boolean; error?: string }) => {
+      if (response?.error) {
+        toast.error(response.error)
+      }
     })
   }
 
@@ -149,6 +167,42 @@ export function WaitingRoom({ room, currentUserId, socket }: WaitingRoomProps) {
               </div>
             </div>
 
+            {isTeamMode && (
+              <div className="rounded-lg bg-cyan-900/20 border border-cyan-700/40 p-4 space-y-3">
+                <p className="text-sm text-cyan-200">
+                  Teammodus aktiv: {room.kniffelMode === 'team2v2' ? '2v2' : '3v3'}
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-md bg-gray-900/60 p-3">
+                    <p className="text-sm font-semibold text-cyan-300">Team A ({teamAPlayers.length}/{teamSize})</p>
+                    <p className="text-xs text-gray-400 mt-1">{teamAPlayers.map(p => p.displayName).join(', ') || 'Noch leer'}</p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-2 border-cyan-600 text-cyan-300 hover:bg-cyan-900/40"
+                      disabled={!currentPlayer || (teamAPlayers.length >= teamSize && currentPlayer?.teamId !== 'team-a')}
+                      onClick={() => handleSelectTeam('team-a')}
+                    >
+                      Team A wählen
+                    </Button>
+                  </div>
+                  <div className="rounded-md bg-gray-900/60 p-3">
+                    <p className="text-sm font-semibold text-cyan-300">Team B ({teamBPlayers.length}/{teamSize})</p>
+                    <p className="text-xs text-gray-400 mt-1">{teamBPlayers.map(p => p.displayName).join(', ') || 'Noch leer'}</p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-2 border-cyan-600 text-cyan-300 hover:bg-cyan-900/40"
+                      disabled={!currentPlayer || (teamBPlayers.length >= teamSize && currentPlayer?.teamId !== 'team-b')}
+                      onClick={() => handleSelectTeam('team-b')}
+                    >
+                      Team B wählen
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Room Link (for private rooms) */}
             {room.isPrivate && (
               <div className="flex items-center gap-2">
@@ -208,6 +262,11 @@ export function WaitingRoom({ room, currentUserId, socket }: WaitingRoomProps) {
                       <p className="text-xs text-gray-400">
                         {player.isReady ? t('room.ready') : t('room.notReady')}
                       </p>
+                      {isTeamMode && (
+                        <p className="text-xs text-cyan-300">
+                          {player.teamId === 'team-a' ? 'Team A' : player.teamId === 'team-b' ? 'Team B' : 'Kein Team'}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -261,6 +320,7 @@ export function WaitingRoom({ room, currentUserId, socket }: WaitingRoomProps) {
                 onClick={handleToggleReady}
                 variant={isReady ? 'outline' : 'default'}
                 size="lg"
+                disabled={!hasSelectedTeam}
                 className={`flex-1 ${
                   isReady
                     ? 'border-green-600 text-green-600 hover:bg-green-600/10'
@@ -294,16 +354,16 @@ export function WaitingRoom({ room, currentUserId, socket }: WaitingRoomProps) {
               <CardContent className="space-y-2">
                 <Button
                   onClick={handleStartGame}
-                  disabled={!allReady}
+                  disabled={!canStart}
                   size="lg"
                   className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-50"
                 >
                   {t('room.startGame')}
-                  {!allReady && ` (${readyCount}/${players.length})`}
+                  {!canStart && ` (${readyCount}/${players.length})`}
                 </Button>
                 <Button
                   onClick={handleForceStart}
-                  disabled={players.length < minPlayers}
+                  disabled={players.length < minPlayers || !teamsFilled || !allAssigned}
                   variant="outline"
                   size="sm"
                   className="w-full border-yellow-600 text-yellow-600 hover:bg-yellow-600/10"

@@ -1,5 +1,6 @@
 // Game types
 export type GameType = 'kniffel' | 'blackjack' | 'roulette' | 'poker'
+export type KniffelMode = 'classic' | 'team2v2' | 'team3v3'
 
 // Dice types
 export type DiceValue = 1 | 2 | 3 | 4 | 5 | 6
@@ -35,6 +36,7 @@ export interface KniffelScoresheet {
 export interface PlayerState {
   userId: string
   displayName: string
+  teamId?: string
   scoresheet: KniffelScoresheet
   isReady: boolean
   isConnected: boolean
@@ -45,6 +47,8 @@ export interface PlayerState {
 // Full game state (stored as JSON in GameRoom.gameState)
 export interface GameState {
   phase: GamePhase
+  kniffelMode?: KniffelMode
+  teams?: TeamInfo[]
   players: PlayerState[]
   spectators: string[] // userIds
   currentPlayerIndex: number
@@ -55,6 +59,12 @@ export interface GameState {
   turnStartedAt: number | null // timestamp for timer sync
   turnDuration: number // seconds
   winner: string | null // userId
+}
+
+export interface TeamInfo {
+  id: string
+  name: string
+  memberUserIds: string[]
 }
 
 export interface PauseVote {
@@ -87,6 +97,7 @@ export interface RouletteSettings {
 export interface RoomSettings {
   name: string
   gameType: GameType
+  kniffelMode?: KniffelMode
   maxPlayers: number // 2-6 for Kniffel, 1-7 for Blackjack, 1-10 for Roulette, 2-9 for Poker
   isPrivate: boolean
   turnTimer: number // 30, 60, or 90
@@ -108,6 +119,7 @@ export interface RoomInfo {
   hostId: string
   hostName: string
   gameType: GameType
+  kniffelMode?: KniffelMode
   status: 'waiting' | 'playing' | 'ended'
   isPrivate: boolean
   maxPlayers: number

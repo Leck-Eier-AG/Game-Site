@@ -18,6 +18,7 @@ import { LogOut, XCircle } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { GameState, PauseVote, ScoreCategory } from '@/types/game'
+import { calculateTotalScore } from '@/lib/game/kniffel-rules'
 
 interface GameBoardProps {
   gameState: GameState
@@ -220,6 +221,15 @@ export function GameBoard({ gameState, roomId, currentUserId, hostId, socket, is
 
   const canRoll = isMyTurn && !isPaused && localGameState.rollsRemaining > 0 && !isAnimating
   const canScore = isMyTurn && !isPaused && localGameState.rollsRemaining < 3 && !isAnimating
+  const teamTotals = (localGameState.teams || []).map(team => {
+    const members = localGameState.players.filter(player => team.memberUserIds.includes(player.userId))
+    return {
+      teamId: team.id,
+      teamName: team.name,
+      total: members.reduce((sum, member) => sum + calculateTotalScore(member.scoresheet), 0),
+      members: members.map(member => member.displayName).join(', ')
+    }
+  }).sort((a, b) => b.total - a.total)
 
   return (
     <>
@@ -382,6 +392,18 @@ export function GameBoard({ gameState, roomId, currentUserId, hostId, socket, is
               )}
 
               {/* Turn Status */}
+              {teamTotals.length > 0 && (
+                <div className="grid grid-cols-2 gap-2">
+                  {teamTotals.map(team => (
+                    <div key={team.teamId} className="rounded-md bg-cyan-900/20 border border-cyan-700/30 p-2">
+                      <p className="text-xs text-cyan-300 font-semibold">{team.teamName}</p>
+                      <p className="text-sm text-cyan-100 font-bold">{team.total} Punkte</p>
+                      <p className="text-[10px] text-gray-300">{team.members}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div className="text-center">
                 {isPaused ? (
                   <p className="text-lg font-bold text-amber-300">Pausiert</p>

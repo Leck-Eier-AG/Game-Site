@@ -26,6 +26,7 @@ export function PlayerList({
         const isCurrentTurn = index === currentPlayerIndex
         const score = calculateTotalScore(player.scoresheet)
         const isCurrentUser = player.userId === currentUserId
+        const teamLabel = player.teamId === 'team-a' ? 'Team A' : player.teamId === 'team-b' ? 'Team B' : null
 
         return (
           <div
@@ -60,6 +61,11 @@ export function PlayerList({
               <span className="text-xs text-gray-400">
                 {score} Punkte
               </span>
+              {teamLabel && (
+                <span className="text-xs text-cyan-400">
+                  {teamLabel}
+                </span>
+              )}
             </div>
 
             {/* Transfer Button */}

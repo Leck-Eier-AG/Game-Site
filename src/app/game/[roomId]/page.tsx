@@ -17,7 +17,7 @@ import { TransferDialog } from '@/components/wallet/transfer-dialog'
 import { BetConfirmation } from '@/components/betting/bet-confirmation'
 
 interface RoomData extends RoomInfo {
-  players: { userId: string; displayName: string; isReady: boolean }[]
+  players: { userId: string; displayName: string; isReady: boolean; teamId?: string }[]
   spectators: string[]
   gameState?: GameState
   pauseVotes?: PauseVote | null
@@ -32,6 +32,13 @@ interface PayoutEntry {
 
 interface GameEndData {
   winner: string
+  winnerTeamId?: string | null
+  teamScores?: {
+    teamId: string
+    teamName: string
+    total: number
+    members: { userId: string; displayName: string; total: number }[]
+  }[] | null
   scores: { userId: string; displayName: string; total: number }[]
   payouts?: PayoutEntry[]
 }
@@ -266,6 +273,8 @@ export default function GameRoomPage() {
     const sorted = [...scores].sort((a, b) => b.total - a.total)
     const winnerId = gameEnd?.winner || room.gameState?.winner
     const payouts = gameEnd?.payouts
+    const teamScores = gameEnd?.teamScores
+    const winnerTeamId = gameEnd?.winnerTeamId
     const isBetGame = room.isBetRoom && payouts && payouts.length > 0
 
     return (
@@ -276,6 +285,31 @@ export default function GameRoomPage() {
             <CardTitle className="text-3xl text-white">{t('game.gameOver')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {teamScores && teamScores.length > 0 && (
+              <div className="space-y-2">
+                {teamScores.map((team) => (
+                  <div
+                    key={team.teamId}
+                    className={`rounded-lg p-3 ${
+                      team.teamId === winnerTeamId
+                        ? 'bg-cyan-500/20 border border-cyan-400/40'
+                        : 'bg-gray-900/50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className={`font-semibold ${team.teamId === winnerTeamId ? 'text-cyan-300' : 'text-gray-200'}`}>
+                        {team.teamName}
+                      </p>
+                      <p className="text-sm font-semibold text-cyan-200">{team.total} Punkte</p>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">
+                      {team.members.map(member => member.displayName).join(', ')}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {sorted.map((player, index) => {
               const isWinner = player.userId === winnerId
               const isMe = player.userId === userId

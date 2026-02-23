@@ -5,7 +5,9 @@ import type {
   DiceValue,
   DiceValues,
   ScoreCategory,
-  KniffelScoresheet
+  KniffelScoresheet,
+  KniffelMode,
+  TeamInfo
 } from '@/types/game'
 import { calculateScore, calculateTotalScore } from './kniffel-rules'
 
@@ -22,11 +24,19 @@ export type GameAction =
  */
 export function createInitialState(
   players: Array<{ userId: string; displayName: string }>,
-  settings: { turnTimer: number; afkThreshold: number }
+  settings: { turnTimer: number; afkThreshold: number; kniffelMode?: KniffelMode; teams?: TeamInfo[] }
 ): GameState {
+  const teamByUserId = new Map<string, string>()
+  for (const team of settings.teams || []) {
+    for (const memberUserId of team.memberUserIds) {
+      teamByUserId.set(memberUserId, team.id)
+    }
+  }
+
   const playerStates: PlayerState[] = players.map(p => ({
     userId: p.userId,
     displayName: p.displayName,
+    teamId: teamByUserId.get(p.userId),
     scoresheet: {},
     isReady: false,
     isConnected: true,
@@ -36,6 +46,8 @@ export function createInitialState(
 
   return {
     phase: 'waiting',
+    kniffelMode: settings.kniffelMode || 'classic',
+    teams: settings.teams || [],
     players: playerStates,
     spectators: [],
     currentPlayerIndex: 0,
