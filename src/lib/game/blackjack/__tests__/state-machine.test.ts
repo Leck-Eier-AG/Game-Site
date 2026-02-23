@@ -5,7 +5,7 @@
 
 import { describe, it, expect } from '@jest/globals';
 import type { Card } from '../../cards/types';
-import { createBlackjackState, applyBlackjackAction, updateHandStatus } from '../state-machine';
+import { createBlackjackState, applyBlackjackAction, updateHandStatus, dealerStep } from '../state-machine';
 import type { BlackjackGameState, BlackjackAction } from '../state-machine';
 
 describe('Blackjack State Machine', () => {
@@ -209,7 +209,7 @@ describe('Blackjack State Machine', () => {
       expect(state.currentPlayerIndex).toBe(1); // Moved to player 2
     });
 
-    it('should transition to settlement when all players have stood', () => {
+    it('should transition to dealer turn when all players have stood', () => {
       let state = createBlackjackState(
         [{ userId: 'user1', displayName: 'Player 1' }],
         { deckCount: 6, turnTimer: 30000 }
@@ -218,8 +218,22 @@ describe('Blackjack State Machine', () => {
       state = applyBlackjackAction(state, { type: 'PLACE_BET', payload: { amount: 100 } }, 'user1') as BlackjackGameState;
       state = applyBlackjackAction(state, { type: 'STAND' }, 'user1') as BlackjackGameState;
 
-      // After all players stand, dealer plays automatically and moves to settlement
-      expect(state.phase).toBe('settlement');
+      // After all players stand, game enters dealer turn; dealer plays via dealerStep
+      expect(state.phase).toBe('dealer_turn');
+      expect(state.dealer.hidden).toBe(false);
+
+      const settled = dealerStep({
+        ...state,
+        dealer: {
+          ...state.dealer,
+          cards: [
+            { rank: 'K', suit: 'hearts' },
+            { rank: '7', suit: 'clubs' },
+          ],
+        },
+      });
+
+      expect(settled.phase).toBe('settlement');
     });
   });
 
@@ -347,10 +361,31 @@ describe('Blackjack State Machine', () => {
       state = applyBlackjackAction(state, { type: 'PLACE_BET', payload: { amount: 100 } }, 'user1') as BlackjackGameState;
       state = applyBlackjackAction(state, { type: 'STAND' }, 'user1') as BlackjackGameState;
 
-      // After all players stand, dealer plays automatically and moves to settlement
-      expect(state.phase).toBe('settlement');
+      // After all players stand, dealer plays via dealerStep
+      expect(state.phase).toBe('dealer_turn');
       expect(state.dealer.hidden).toBe(false); // Hole card revealed
-      expect(state.dealer.cards.length).toBeGreaterThanOrEqual(2);
+
+      const withSixteen = {
+        ...state,
+        dealer: {
+          ...state.dealer,
+          cards: [
+            { rank: '10', suit: 'hearts' },
+            { rank: '6', suit: 'spades' },
+          ],
+        },
+        deck: [
+          { rank: '5', suit: 'diamonds' },
+          ...state.deck,
+        ],
+      };
+
+      const hitResult = dealerStep(withSixteen);
+      expect(hitResult.phase).toBe('dealer_turn');
+      expect(hitResult.dealer.cards.length).toBe(3);
+
+      const settled = dealerStep(hitResult);
+      expect(settled.phase).toBe('settlement');
     });
 
     it('should dealer play and transition to settlement', () => {
@@ -362,8 +397,21 @@ describe('Blackjack State Machine', () => {
       state = applyBlackjackAction(state, { type: 'PLACE_BET', payload: { amount: 100 } }, 'user1') as BlackjackGameState;
       state = applyBlackjackAction(state, { type: 'STAND' }, 'user1') as BlackjackGameState;
 
-      // Dealer auto-plays and game moves to settlement
-      expect(state.phase).toBe('settlement');
+      // Dealer plays via dealerStep and game moves to settlement
+      expect(state.phase).toBe('dealer_turn');
+
+      const settled = dealerStep({
+        ...state,
+        dealer: {
+          ...state.dealer,
+          cards: [
+            { rank: 'Q', suit: 'hearts' },
+            { rank: '7', suit: 'spades' },
+          ],
+        },
+      });
+
+      expect(settled.phase).toBe('settlement');
     });
   });
 
@@ -406,7 +454,10 @@ describe('Blackjack State Machine', () => {
 
       state = applyBlackjackAction(state, { type: 'STAND' }, 'user1') as BlackjackGameState;
 
-      expect(state.phase).toBe('settlement');
+      expect(state.phase).toBe('dealer_turn');
+
+      const settled = dealerStep(state);
+      expect(settled.phase).toBe('settlement');
     });
   });
 
