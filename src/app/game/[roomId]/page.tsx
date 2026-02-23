@@ -8,7 +8,7 @@ import { GameBoard } from '@/components/game/GameBoard'
 import { BlackjackTable } from '@/components/blackjack/BlackjackTable'
 import { RouletteTable } from '@/components/roulette/RouletteTable'
 import { PokerTable } from '@/components/poker/PokerTable'
-import type { GameState, RoomInfo } from '@/types/game'
+import type { GameState, PauseVote, RoomInfo } from '@/types/game'
 import { useTranslations } from 'next-intl'
 import { Trophy, ArrowLeft, Send } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -20,6 +20,7 @@ interface RoomData extends RoomInfo {
   players: { userId: string; displayName: string; isReady: boolean }[]
   spectators: string[]
   gameState?: GameState
+  pauseVotes?: PauseVote | null
 }
 
 interface PayoutEntry {
@@ -373,6 +374,7 @@ export default function GameRoomPage() {
             socket={socket}
             isBetRoom={room.isBetRoom}
             betAmount={room.betAmount}
+            pauseVotes={room.pauseVotes || null}
           />
         )
       case 'blackjack':

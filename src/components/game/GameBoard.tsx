@@ -17,7 +17,7 @@ import { GameBalance } from '@/components/wallet/game-balance'
 import { LogOut, XCircle } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { GameState, ScoreCategory } from '@/types/game'
+import { GameState, PauseVote, ScoreCategory } from '@/types/game'
 
 interface GameBoardProps {
   gameState: GameState
@@ -27,16 +27,20 @@ interface GameBoardProps {
   socket: Socket
   isBetRoom?: boolean
   betAmount?: number
+  pauseVotes?: PauseVote | null
 }
 
-export function GameBoard({ gameState, roomId, currentUserId, hostId, socket, isBetRoom = false, betAmount = 0 }: GameBoardProps) {
+export function GameBoard({ gameState, roomId, currentUserId, hostId, socket, isBetRoom = false, betAmount = 0, pauseVotes = null }: GameBoardProps) {
   const t = useTranslations()
   const router = useRouter()
   const [isAnimating, setIsAnimating] = useState(false)
   const [localGameState, setLocalGameState] = useState(gameState)
   const prevDiceRef = useRef(gameState.dice)
+  const prevRollsRemainingRef = useRef(gameState.rollsRemaining)
+  const prevPlayerIndexRef = useRef(gameState.currentPlayerIndex)
   const [confirmLeave, setConfirmLeave] = useState(false)
   const [confirmAbort, setConfirmAbort] = useState(false)
+  const [pauseVoteStartedLocal, setPauseVoteStartedLocal] = useState(false)
   const isHost = currentUserId === hostId
   const isSpectator = localGameState.spectators.includes(currentUserId)
 
@@ -50,10 +54,17 @@ export function GameBoard({ gameState, roomId, currentUserId, hostId, socket, is
 
     // Check if dice values changed (indicates a new roll from server)
     const diceChanged = gameState.dice.some((val, idx) => val !== prevDiceRef.current[idx])
-    if (diceChanged && gameState.rollsRemaining < 3) {
+    const rollConsumed =
+      gameState.currentPlayerIndex === prevPlayerIndexRef.current &&
+      gameState.rollsRemaining < prevRollsRemainingRef.current
+
+    // Trigger roll animation for actual roll events, even if values are unchanged.
+    if ((diceChanged || rollConsumed) && gameState.rollsRemaining < 3) {
       setIsAnimating(true)
     }
     prevDiceRef.current = gameState.dice
+    prevRollsRemainingRef.current = gameState.rollsRemaining
+    prevPlayerIndexRef.current = gameState.currentPlayerIndex
   }, [gameState])
 
   // Listen for game state updates
@@ -64,10 +75,16 @@ export function GameBoard({ gameState, roomId, currentUserId, hostId, socket, is
 
         // Check if dice changed
         const diceChanged = data.state.dice.some((val, idx) => val !== prevDiceRef.current[idx])
-        if (diceChanged && data.state.rollsRemaining < 3) {
+        const rollConsumed =
+          data.state.currentPlayerIndex === prevPlayerIndexRef.current &&
+          data.state.rollsRemaining < prevRollsRemainingRef.current
+
+        if ((diceChanged || rollConsumed) && data.state.rollsRemaining < 3) {
           setIsAnimating(true)
         }
         prevDiceRef.current = data.state.dice
+        prevRollsRemainingRef.current = data.state.rollsRemaining
+        prevPlayerIndexRef.current = data.state.currentPlayerIndex
       }
     }
 
@@ -76,29 +93,55 @@ export function GameBoard({ gameState, roomId, currentUserId, hostId, socket, is
       // Could show toast here
     }
 
+    const handlePauseVoteStarted = (data: { roomId: string; starterUserId: string; starterName: string }) => {
+      if (data.roomId !== roomId) return
+      if (data.starterUserId !== currentUserId) {
+        toast.info(`${data.starterName} hat eine Pause-Abstimmung gestartet`)
+      }
+    }
+
     socket.on('game:state-update', handleGameStateUpdate)
     socket.on('game:error', handleGameError)
+    socket.on('game:pause-vote-started', handlePauseVoteStarted)
 
     return () => {
       socket.off('game:state-update', handleGameStateUpdate)
       socket.off('game:error', handleGameError)
+      socket.off('game:pause-vote-started', handlePauseVoteStarted)
     }
-  }, [socket, roomId])
+  }, [socket, roomId, currentUserId])
 
   const currentPlayer = localGameState.players[localGameState.currentPlayerIndex]
   const isMyTurn = currentPlayer?.userId === currentUserId
+  const isPaused = localGameState.phase === 'paused'
+  const me = localGameState.players.find(p => p.userId === currentUserId)
+  const readyCount = localGameState.players.filter(p => p.isReady).length
+  const allReadyToResume = localGameState.players.length > 0 && readyCount === localGameState.players.length
+  const showPauseVoteControls = Boolean(pauseVotes) || pauseVoteStartedLocal
+
+  useEffect(() => {
+    if (pauseVotes) {
+      setPauseVoteStartedLocal(true)
+    } else if (!isPaused) {
+      setPauseVoteStartedLocal(false)
+    }
+  }, [pauseVotes, isPaused])
 
   const handleRollDice = () => {
-    if (!isMyTurn || localGameState.rollsRemaining === 0 || isAnimating) return
+    if (!isMyTurn || isPaused || localGameState.rollsRemaining === 0 || isAnimating) return
 
     socket.emit('game:roll-dice', {
       roomId,
       keptDice: localGameState.keptDice
+    }, (response: { success?: boolean; error?: string }) => {
+      if (response?.error) {
+        toast.error(response.error)
+      }
     })
   }
 
   const handleDieClick = (index: number) => {
-    if (!isMyTurn || localGameState.rollsRemaining === 3 || isAnimating) return
+    if (!isMyTurn || isPaused || localGameState.rollsRemaining === 3 || isAnimating) return
 
     const newKeptDice = [...localGameState.keptDice]
     newKeptDice[index] = !newKeptDice[index]
@@ -108,16 +151,58 @@ export function GameBoard({ gameState, roomId, currentUserId, hostId, socket, is
   }
 
   const handleSelectCategory = (category: ScoreCategory) => {
-    if (!isMyTurn || localGameState.rollsRemaining === 3 || isAnimating) return
+    if (!isMyTurn || isPaused || localGameState.rollsRemaining === 3 || isAnimating) return
 
     socket.emit('game:choose-category', {
       roomId,
       category
+    }, (response: { success?: boolean; error?: string }) => {
+      if (response?.error) {
+        toast.error(response.error)
+      }
     })
   }
 
   const handleRollComplete = () => {
     setIsAnimating(false)
+  }
+
+  const handlePauseVote = (vote: boolean) => {
+    if (isPaused) return
+    socket.timeout(3000).emit('game:pause-vote', { roomId, vote }, (err: unknown, response: { success?: boolean; error?: string }) => {
+      if (err) {
+        toast.error('Pause-Abstimmung: Zeitüberschreitung')
+        return
+      }
+      if (response?.error) {
+        toast.error(response.error)
+      }
+    })
+  }
+
+  const handleStartPauseVote = () => {
+    if (isPaused || showPauseVoteControls) return
+    socket.timeout(3000).emit('game:start-pause-vote', { roomId }, (err: unknown, response: { success?: boolean; error?: string }) => {
+      if (err) {
+        toast.error('Start der Pause-Abstimmung: Zeitüberschreitung')
+        return
+      }
+      if (response?.error) {
+        toast.error(response.error)
+        return
+      }
+      setPauseVoteStartedLocal(true)
+      toast.success('Pause-Abstimmung gestartet')
+    })
+  }
+
+  const handleResumeReady = () => {
+    if (!isPaused) return
+    socket.emit('game:resume-ready', { roomId }, (response: { success?: boolean; error?: string }) => {
+      if (response?.error) {
+        toast.error(response.error)
+      }
+    })
   }
 
   const handleLeave = () => {
@@ -133,8 +218,8 @@ export function GameBoard({ gameState, roomId, currentUserId, hostId, socket, is
     })
   }
 
-  const canRoll = isMyTurn && localGameState.rollsRemaining > 0 && !isAnimating
-  const canScore = isMyTurn && localGameState.rollsRemaining < 3 && !isAnimating
+  const canRoll = isMyTurn && !isPaused && localGameState.rollsRemaining > 0 && !isAnimating
+  const canScore = isMyTurn && !isPaused && localGameState.rollsRemaining < 3 && !isAnimating
 
   return (
     <>
@@ -244,9 +329,63 @@ export function GameBoard({ gameState, roomId, currentUserId, hostId, socket, is
           {/* Game Info & Actions */}
           <Card className="border-gray-700 bg-gray-800/50 p-4">
             <div className="space-y-3">
+              {isPaused ? (
+                <div className="rounded-md border border-amber-600/40 bg-amber-900/20 p-3 text-center">
+                  <p className="text-sm font-semibold text-amber-300">Spiel pausiert</p>
+                  <p className="text-xs text-amber-200/80 mt-1">
+                    Bereit: {readyCount}/{localGameState.players.length}
+                  </p>
+                  <Button
+                    onClick={handleResumeReady}
+                    size="sm"
+                    className="mt-3 bg-amber-600 hover:bg-amber-700"
+                  >
+                    {me?.isReady ? 'Nicht bereit' : 'Bereit zum Fortsetzen'}
+                  </Button>
+                  {allReadyToResume && (
+                    <p className="mt-2 text-xs text-green-300">Alle bereit, Spiel wird fortgesetzt...</p>
+                  )}
+                </div>
+              ) : showPauseVoteControls ? (
+                <div className="rounded-md border border-gray-700 bg-gray-900/40 p-3">
+                  <p className="text-xs text-gray-300 mb-2">Pause abstimmen ({pauseVotes?.votedYes.length || 0}/{pauseVotes?.required || Math.floor(localGameState.players.length / 2) + 1})</p>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => handlePauseVote(true)}
+                      size="sm"
+                      variant="outline"
+                      className="border-amber-600 text-amber-300 hover:bg-amber-900/30"
+                    >
+                      Ja, pausieren
+                    </Button>
+                    <Button
+                      onClick={() => handlePauseVote(false)}
+                      size="sm"
+                      variant="outline"
+                      className="border-gray-600 text-gray-300 hover:bg-gray-700/50"
+                    >
+                      Nein
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-md border border-gray-700 bg-gray-900/40 p-3">
+                  <Button
+                    onClick={handleStartPauseVote}
+                    size="sm"
+                    variant="outline"
+                    className="border-amber-600 text-amber-300 hover:bg-amber-900/30"
+                  >
+                    Pause-Abstimmung starten
+                  </Button>
+                </div>
+              )}
+
               {/* Turn Status */}
               <div className="text-center">
-                {isMyTurn ? (
+                {isPaused ? (
+                  <p className="text-lg font-bold text-amber-300">Pausiert</p>
+                ) : isMyTurn ? (
                   <p className="text-lg font-bold text-green-400">
                     {t('game.yourTurn')}
                   </p>

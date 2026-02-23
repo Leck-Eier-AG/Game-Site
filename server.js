@@ -91,6 +91,7 @@ class RoomManager {
       players: [{ userId: hostId, displayName: hostName, isReady: false }],
       spectators: [],
       gameState: null,
+      pauseVotes: null,
       chat: [],
       createdAt: Date.now()
     }
@@ -226,6 +227,10 @@ class RoomManager {
 
 const roomManager = new RoomManager()
 
+function getMajorityRequired(total) {
+  return Math.floor(total / 2) + 1
+}
+
 // Helper: Build rankings from game state for payout calculation
 function buildRankings(gameState) {
   // Sort players by total score descending
@@ -328,7 +333,7 @@ const afkWarnings = new Map() // roomId:userId -> timeout
 function startTurnTimer(roomId, io) {
   clearTurnTimer(roomId)
   const room = roomManager.getRoom(roomId)
-  if (!room || !room.gameState || room.gameState.phase === 'ended') return
+  if (!room || !room.gameState || room.gameState.phase !== 'rolling') return
 
   const timeout = setTimeout(async () => {
     try {
@@ -356,7 +361,7 @@ function clearTurnTimer(roomId) {
 // Auto-play on timeout using imported autoPickCategory
 async function autoPlay(roomId, io) {
   const room = roomManager.getRoom(roomId)
-  if (!room || !room.gameState || room.gameState.phase === 'ended') return
+  if (!room || !room.gameState || room.gameState.phase !== 'rolling') return
   const gs = room.gameState
   const currentPlayer = gs.players[gs.currentPlayerIndex]
 
@@ -428,6 +433,7 @@ async function autoPlay(roomId, io) {
   // Check if game ended
   if (result.phase === 'ended') {
     room.status = 'ended'
+    room.pauseVotes = null
     clearTurnTimer(roomId)
     const winnerPlayer = result.players.find(p => p.userId === result.winner)
     const winnerTotal = calculateTotalScore(winnerPlayer.scoresheet)
@@ -565,6 +571,7 @@ async function kickPlayerAFK(room, roomId, player, io) {
     room.gameState.phase = 'ended'
     room.gameState.winner = room.gameState.players[0]?.userId || null
     room.status = 'ended'
+    room.pauseVotes = null
     clearTurnTimer(roomId)
     const winner = room.gameState.players[0]
     if (winner) {
@@ -1220,6 +1227,163 @@ app.prepare().then(() => {
       callback?.({ success: true, isReady: player.isReady })
     })
 
+    socket.on('game:pause-vote', ({ roomId, vote }, callback) => {
+      const room = roomManager.getRoom(roomId)
+      if (!room || !room.gameState || room.status !== 'playing') {
+        callback?.({ error: 'Kein aktives Spiel' })
+        return
+      }
+      if (room.gameType !== 'kniffel') {
+        callback?.({ error: 'Ungültiger Spieltyp für diese Aktion' })
+        return
+      }
+      if (room.gameState.phase !== 'rolling') {
+        callback?.({ error: 'Spiel ist gerade nicht pausierbar' })
+        return
+      }
+      if (!room.gameState.players.some(p => p.userId === socket.data.userId)) {
+        callback?.({ error: 'Du bist kein aktiver Spieler' })
+        return
+      }
+
+      if (!room.pauseVotes) {
+        callback?.({ error: 'Keine aktive Pause-Abstimmung' })
+        return
+      }
+
+      room.pauseVotes.votedYes = room.pauseVotes.votedYes.filter(id => id !== socket.data.userId)
+      room.pauseVotes.votedNo = room.pauseVotes.votedNo.filter(id => id !== socket.data.userId)
+
+      if (vote) room.pauseVotes.votedYes.push(socket.data.userId)
+      else room.pauseVotes.votedNo.push(socket.data.userId)
+
+      io.to(roomId).emit('room:update', room)
+
+      if (room.pauseVotes.votedYes.length >= room.pauseVotes.required) {
+        clearTurnTimer(roomId)
+        room.pauseVotes = null
+        room.gameState.phase = 'paused'
+        room.gameState.turnStartedAt = null
+        room.gameState.players = room.gameState.players.map(player => ({
+          ...player,
+          isReady: false
+        }))
+
+        sendSystemMessage(roomId, io, 'Spiel pausiert. Alle Spieler müssen wieder auf Bereit klicken.')
+        io.to(roomId).emit('game:state-update', { state: room.gameState, roomId })
+        io.to(roomId).emit('room:update', room)
+      }
+
+      callback?.({ success: true })
+    })
+
+    socket.on('game:start-pause-vote', ({ roomId }, callback) => {
+      const room = roomManager.getRoom(roomId)
+      if (!room || !room.gameState || room.status !== 'playing') {
+        callback?.({ error: 'Kein aktives Spiel' })
+        return
+      }
+      if (room.gameType !== 'kniffel') {
+        callback?.({ error: 'Ungültiger Spieltyp für diese Aktion' })
+        return
+      }
+      if (room.gameState.phase !== 'rolling') {
+        callback?.({ error: 'Spiel ist gerade nicht pausierbar' })
+        return
+      }
+      const starter = room.gameState.players.find(p => p.userId === socket.data.userId)
+      if (!starter) {
+        callback?.({ error: 'Du bist kein aktiver Spieler' })
+        return
+      }
+      if (room.pauseVotes) {
+        callback?.({ error: 'Pause-Abstimmung läuft bereits' })
+        return
+      }
+
+      const total = room.gameState.players.length
+      room.pauseVotes = {
+        votedYes: [starter.userId],
+        votedNo: [],
+        total,
+        required: getMajorityRequired(total)
+      }
+
+      io.to(roomId).emit('room:update', room)
+      io.to(roomId).emit('game:pause-vote-started', {
+        roomId,
+        starterUserId: starter.userId,
+        starterName: starter.displayName
+      })
+
+      if (room.pauseVotes.votedYes.length >= room.pauseVotes.required) {
+        clearTurnTimer(roomId)
+        room.pauseVotes = null
+        room.gameState.phase = 'paused'
+        room.gameState.turnStartedAt = null
+        room.gameState.players = room.gameState.players.map(player => ({
+          ...player,
+          isReady: false
+        }))
+
+        sendSystemMessage(roomId, io, 'Spiel pausiert. Alle Spieler müssen wieder auf Bereit klicken.')
+        io.to(roomId).emit('game:state-update', { state: room.gameState, roomId })
+        io.to(roomId).emit('room:update', room)
+      }
+
+      callback?.({ success: true })
+    })
+
+    socket.on('game:resume-ready', ({ roomId }, callback) => {
+      const room = roomManager.getRoom(roomId)
+      if (!room || !room.gameState || room.status !== 'playing') {
+        callback?.({ error: 'Kein aktives Spiel' })
+        return
+      }
+      if (room.gameType !== 'kniffel') {
+        callback?.({ error: 'Ungültiger Spieltyp für diese Aktion' })
+        return
+      }
+      if (room.gameState.phase !== 'paused') {
+        callback?.({ error: 'Spiel ist nicht pausiert' })
+        return
+      }
+
+      const playerIndex = room.gameState.players.findIndex(p => p.userId === socket.data.userId)
+      if (playerIndex === -1) {
+        callback?.({ error: 'Du bist kein aktiver Spieler' })
+        return
+      }
+
+      room.gameState.players[playerIndex] = {
+        ...room.gameState.players[playerIndex],
+        isReady: !room.gameState.players[playerIndex].isReady
+      }
+
+      const allReady = room.gameState.players.length > 0 && room.gameState.players.every(p => p.isReady)
+
+      if (allReady) {
+        room.gameState.players = room.gameState.players.map(player => ({
+          ...player,
+          isReady: false
+        }))
+        room.gameState.phase = 'rolling'
+        room.gameState.turnStartedAt = Date.now()
+        startTurnTimer(roomId, io)
+        sendSystemMessage(roomId, io, 'Pause beendet. Das Spiel läuft weiter.')
+      }
+
+      io.to(roomId).emit('game:state-update', { state: room.gameState, roomId })
+      io.to(roomId).emit('room:update', room)
+
+      callback?.({
+        success: true,
+        isReady: room.gameState.players[playerIndex].isReady,
+        readyCount: room.gameState.players.filter(p => p.isReady).length,
+        total: room.gameState.players.length
+      })
+    })
+
     // Handle dice roll
     socket.on('game:roll-dice', ({ roomId, keptDice }, callback) => {
       const room = roomManager.getRoom(roomId)
@@ -1321,6 +1485,7 @@ app.prepare().then(() => {
       // Check if game ended
       if (result.phase === 'ended') {
         room.status = 'ended'
+        room.pauseVotes = null
         clearTurnTimer(roomId)
         const winnerPlayer = result.players.find(p => p.userId === result.winner)
         const winnerTotal = calculateTotalScore(winnerPlayer.scoresheet)
@@ -1534,6 +1699,7 @@ app.prepare().then(() => {
       }
 
       room.status = 'playing'
+      room.pauseVotes = null
 
       // Lock all PENDING escrows for bet rooms
       if (room.isBetRoom) {
@@ -1600,6 +1766,7 @@ app.prepare().then(() => {
       clearTurnTimer(roomId)
       room.gameState = null
       room.status = 'waiting'
+      room.pauseVotes = null
       // Reset all players to not ready
       for (const p of room.players) {
         p.isReady = false
@@ -1635,6 +1802,7 @@ app.prepare().then(() => {
         room.status = 'waiting'
         room.gameState = null
         room.rematchVotes = null
+        room.pauseVotes = null
         for (const p of room.players) { p.isReady = false }
         io.to(roomId).emit('game:rematch-accepted')
         sendSystemMessage(roomId, io, 'Noch eine Runde! Alle bereit machen...')

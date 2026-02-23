@@ -7,7 +7,7 @@ export type DiceValues = [DiceValue, DiceValue, DiceValue, DiceValue, DiceValue]
 export type KeptDice = boolean[] // which dice are kept (true = kept)
 
 // Game phases - state machine states
-export type GamePhase = 'waiting' | 'rolling' | 'scoring' | 'ended'
+export type GamePhase = 'waiting' | 'rolling' | 'paused' | 'scoring' | 'ended'
 
 // Kniffel scoring categories
 export type ScoreCategory =
@@ -55,6 +55,13 @@ export interface GameState {
   turnStartedAt: number | null // timestamp for timer sync
   turnDuration: number // seconds
   winner: string | null // userId
+}
+
+export interface PauseVote {
+  votedYes: string[]
+  votedNo: string[]
+  total: number
+  required: number // >50% majority
 }
 
 // Game-specific settings
