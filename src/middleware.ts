@@ -24,18 +24,8 @@ export async function middleware(request: NextRequest) {
 
   // For public routes
   if (publicRoutes.includes(path)) {
-    // If already logged in, redirect away from login/register
-    if (sessionCookie && (path === '/login' || path === '/register')) {
-      try {
-        await jwtVerify(sessionCookie, encodedKey, { algorithms: ['HS256'] })
-        return NextResponse.redirect(new URL('/', request.url))
-      } catch {
-        // Invalid session, allow access to login/register
-        return NextResponse.next()
-      }
-    }
-
-    // Allow access to public routes
+    // Always allow access to public auth routes to avoid redirect loops
+    // when a JWT is still valid but the backing user no longer exists.
     return NextResponse.next()
   }
 

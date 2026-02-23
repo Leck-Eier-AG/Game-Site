@@ -1,7 +1,7 @@
 import 'server-only'
 import { cache } from 'react'
 import { redirect } from 'next/navigation'
-import { verifySession, deleteSession } from './session'
+import { verifySession } from './session'
 import { prisma } from '@/lib/db'
 import type { UserRole } from '@/types'
 
@@ -33,7 +33,6 @@ export const getSession = cache(async (): Promise<SessionData> => {
 
   // If user not found or banned, clear session and redirect
   if (!user || user.bannedAt) {
-    await deleteSession()
     redirect('/login')
   }
 
@@ -65,7 +64,6 @@ export const getOptionalSession = cache(
 
     // If user not found or banned, clear session
     if (!user || user.bannedAt) {
-      await deleteSession()
       return null
     }
 
