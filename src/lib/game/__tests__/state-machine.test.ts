@@ -781,6 +781,23 @@ describe('checkGameEnd', () => {
     expect(newState.phase).toBe('ended')
     expect(newState.winner).toBe('user1') // Alice has higher score
   })
+
+  it('uses column multipliers when determining winner', () => {
+    const state = createInitialState(
+      [
+        { userId: 'user1', displayName: 'Alice' },
+        { userId: 'user2', displayName: 'Bob' }
+      ],
+      { turnTimer: 60, afkThreshold: 3, kniffelPreset: 'triple' }
+    )
+
+    state.players[0].scoresheet = { columns: [{ ones: 6 }, {}, {}] }
+    state.players[1].scoresheet = { columns: [{}, {}, { ones: 3 }] }
+
+    const newState = checkGameEnd(state)
+
+    expect(newState.winner).toBe('user2')
+  })
 })
 
 describe('isValidAction', () => {

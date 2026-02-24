@@ -11,7 +11,7 @@ import type {
   KniffelPreset,
   KniffelRuleset
 } from '@/types/game'
-import { calculateScoreWithRuleset, calculateTotalScore } from './kniffel-rules'
+import { calculateScoreWithRuleset, calculateTotalScore, calculateTotalScoreWithRuleset } from './kniffel-rules'
 import { resolveKniffelRuleset } from './kniffel-ruleset'
 import { isCategoryAllowedByConstraints } from './constraints'
 import { applyEffects } from './kniffel-effects'
@@ -205,10 +205,11 @@ export function advanceTurn(state: GameState): GameState {
  * Check if game should end and determine winner
  */
 export function checkGameEnd(state: GameState): GameState {
+  const ruleset = state.ruleset || resolveKniffelRuleset('classic')
   // Calculate total scores for all players
   const scores = state.players.map(player => ({
     userId: player.userId,
-    total: calculateTotalScore(player.scoresheet)
+    total: calculateTotalScoreWithRuleset(player.scoresheet, ruleset)
   }))
 
   // Find winner (highest score)

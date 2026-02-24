@@ -7,7 +7,12 @@ import { Server } from 'socket.io'
 import { jwtVerify } from 'jose'
 import { PrismaClient } from '@prisma/client'
 import { applyAction, createInitialState } from './src/lib/game/state-machine.js'
-import { autoPickCategory, calculateScoreWithRuleset, calculateTotalScore } from './src/lib/game/kniffel-rules.js'
+import {
+  autoPickCategory,
+  calculateScoreWithRuleset,
+  calculateTotalScoreWithRuleset,
+  getAvailableCategoriesWithRuleset
+} from './src/lib/game/kniffel-rules.js'
 import { resolveKniffelRuleset } from './src/lib/game/kniffel-ruleset.js'
 import { rollDice } from './src/lib/game/crypto-rng.js'
 import { getWalletWithUser, getTransactionHistory, creditBalance, debitBalance, getSystemSettings } from './src/lib/wallet/transactions.js'
@@ -273,10 +278,14 @@ function buildKniffelTeams(players, kniffelMode) {
 
 function buildKniffelTeamSummary(gameState) {
   if (!gameState?.teams?.length) return null
+  const ruleset = gameState.ruleset || resolveKniffelRuleset('classic')
 
   const teamScores = gameState.teams.map(team => {
     const players = gameState.players.filter(player => team.memberUserIds.includes(player.userId))
-    const total = players.reduce((sum, player) => sum + calculateTotalScore(player.scoresheet), 0)
+    const total = players.reduce(
+      (sum, player) => sum + calculateTotalScoreWithRuleset(player.scoresheet, ruleset),
+      0
+    )
     return {
       teamId: team.id,
       teamName: team.name,
@@ -284,7 +293,7 @@ function buildKniffelTeamSummary(gameState) {
       members: players.map(player => ({
         userId: player.userId,
         displayName: player.displayName,
-        total: calculateTotalScore(player.scoresheet)
+        total: calculateTotalScoreWithRuleset(player.scoresheet, ruleset)
       }))
     }
   }).sort((a, b) => b.total - a.total)
@@ -297,11 +306,12 @@ function buildKniffelTeamSummary(gameState) {
 
 // Helper: Build rankings from game state for payout calculation
 function buildRankings(gameState) {
+  const ruleset = gameState.ruleset || resolveKniffelRuleset('classic')
   // Sort players by total score descending
   const sortedPlayers = [...gameState.players]
     .map(p => ({
       ...p,
-      total: calculateTotalScore(p.scoresheet)
+      total: calculateTotalScoreWithRuleset(p.scoresheet, ruleset)
     }))
     .sort((a, b) => b.total - a.total)
 
@@ -443,10 +453,24 @@ async function autoPlay(roomId, io) {
 
   // Pick best category using imported autoPickCategory from kniffel-rules.js
   const ruleset = state.ruleset || resolveKniffelRuleset('classic')
-  const bestCategory = autoPickCategory(state.dice, currentPlayer.scoresheet, ruleset)
+  const selectAutoScoresheet = (scoresheet) => {
+    if (!scoresheet || !('columns' in scoresheet)) {
+      return { scoresheet, columnIndex: undefined }
+    }
+
+    const columns = scoresheet.columns
+    const availableIndex = columns.findIndex(
+      (column) => getAvailableCategoriesWithRuleset(column, ruleset).length > 0
+    )
+    const columnIndex = availableIndex >= 0 ? availableIndex : 0
+    return { scoresheet: columns[columnIndex], columnIndex }
+  }
+
+  const { scoresheet: autoScoresheet, columnIndex } = selectAutoScoresheet(currentPlayer.scoresheet)
+  const bestCategory = autoPickCategory(state.dice, autoScoresheet, ruleset)
 
   // Apply scoring via state machine
-  const scoreAction = { type: 'CHOOSE_CATEGORY', category: bestCategory, auto: true }
+  const scoreAction = { type: 'CHOOSE_CATEGORY', category: bestCategory, auto: true, columnIndex }
   const result = applyAction(state, scoreAction, currentPlayer.userId)
 
   if (result instanceof Error) {
@@ -502,7 +526,7 @@ async function autoPlay(roomId, io) {
     room.pauseVotes = null
     clearTurnTimer(roomId)
     const winnerPlayer = result.players.find(p => p.userId === result.winner)
-    const winnerTotal = calculateTotalScore(winnerPlayer.scoresheet)
+    const winnerTotal = calculateTotalScoreWithRuleset(winnerPlayer.scoresheet, result.ruleset || ruleset)
     sendSystemMessage(roomId, io, `Spiel beendet! Gewinner: ${winnerPlayer.displayName} (${winnerTotal} Punkte)`)
 
     // Handle bet room payouts
@@ -582,11 +606,16 @@ async function autoPlay(roomId, io) {
 
     room.rematchVotes = { votedYes: [], votedNo: [], total: result.players.length, required: Math.ceil(result.players.length / 2) }
     const teamSummary = room.gameType === 'kniffel' ? buildKniffelTeamSummary(result) : null
+    const finalRuleset = result.ruleset || resolveKniffelRuleset('classic')
     io.to(roomId).emit('game:ended', {
       winner: result.winner,
       winnerTeamId: teamSummary?.winnerTeamId || null,
       teamScores: teamSummary?.teamScores || null,
-      scores: result.players.map(p => ({ userId: p.userId, displayName: p.displayName, total: calculateTotalScore(p.scoresheet) })),
+      scores: result.players.map(p => ({
+        userId: p.userId,
+        displayName: p.displayName,
+        total: calculateTotalScoreWithRuleset(p.scoresheet, finalRuleset)
+      })),
       payouts: payoutData
     })
     io.emit('room:list-update', roomManager.getPublicRooms())
@@ -651,11 +680,16 @@ async function kickPlayerAFK(room, roomId, player, io) {
       sendSystemMessage(roomId, io, `${winner.displayName} gewinnt! Alle anderen Spieler waren AFK.`)
     }
     const teamSummary = room.gameType === 'kniffel' ? buildKniffelTeamSummary(room.gameState) : null
+    const finalRuleset = room.gameState.ruleset || resolveKniffelRuleset('classic')
     io.to(roomId).emit('game:ended', {
       winner: room.gameState.winner,
       winnerTeamId: teamSummary?.winnerTeamId || null,
       teamScores: teamSummary?.teamScores || null,
-      scores: room.gameState.players.map(p => ({ userId: p.userId, displayName: p.displayName, total: calculateTotalScore(p.scoresheet) }))
+      scores: room.gameState.players.map(p => ({
+        userId: p.userId,
+        displayName: p.displayName,
+        total: calculateTotalScoreWithRuleset(p.scoresheet, finalRuleset)
+      }))
     })
     return
   }
@@ -1585,7 +1619,7 @@ app.prepare().then(() => {
     })
 
     // Handle category selection
-    socket.on('game:choose-category', async ({ roomId, category }, callback) => {
+    socket.on('game:choose-category', async ({ roomId, category, columnIndex }, callback) => {
       const room = roomManager.getRoom(roomId)
       if (!room || !room.gameState) {
         callback?.({ error: 'No game' })
@@ -1598,7 +1632,7 @@ app.prepare().then(() => {
       const gs = room.gameState
 
       // Apply action via imported state machine (which internally uses calculateScore)
-      const action = { type: 'CHOOSE_CATEGORY', category }
+      const action = { type: 'CHOOSE_CATEGORY', category, columnIndex }
       const result = applyAction(gs, action, socket.data.userId)
 
       if (result instanceof Error) {
@@ -1608,7 +1642,8 @@ app.prepare().then(() => {
 
       // Calculate score for the message (before state update)
       const scoredPlayer = gs.players[gs.currentPlayerIndex]
-      const score = calculateScore(category, gs.dice)
+      const ruleset = gs.ruleset || resolveKniffelRuleset('classic')
+      const score = calculateScoreWithRuleset(category, gs.dice, ruleset)
 
       // Cancel AFK warning if active
       const warningKey = `${roomId}:${socket.data.userId}`
@@ -1634,7 +1669,7 @@ app.prepare().then(() => {
         room.pauseVotes = null
         clearTurnTimer(roomId)
         const winnerPlayer = result.players.find(p => p.userId === result.winner)
-        const winnerTotal = calculateTotalScore(winnerPlayer.scoresheet)
+        const winnerTotal = calculateTotalScoreWithRuleset(winnerPlayer.scoresheet, result.ruleset || ruleset)
         sendSystemMessage(
           roomId,
           io,
@@ -1726,6 +1761,7 @@ app.prepare().then(() => {
 
         io.to(roomId).emit('room:update', room)
         const teamSummary = room.gameType === 'kniffel' ? buildKniffelTeamSummary(result) : null
+        const finalRuleset = result.ruleset || resolveKniffelRuleset('classic')
         io.to(roomId).emit('game:ended', {
           winner: result.winner,
           winnerTeamId: teamSummary?.winnerTeamId || null,
@@ -1733,7 +1769,7 @@ app.prepare().then(() => {
           scores: result.players.map(p => ({
             userId: p.userId,
             displayName: p.displayName,
-            total: calculateTotalScore(p.scoresheet)
+            total: calculateTotalScoreWithRuleset(p.scoresheet, finalRuleset)
           })),
           payouts: payoutData
         })
