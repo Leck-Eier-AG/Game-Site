@@ -54,7 +54,20 @@ export async function createInvite(
     }
 
     const { email, sendEmail, customStartingBalance } = validatedFields.data
-    const appUrl = (formData.get('origin') as string) || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    const trustedBase = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    let appUrl = trustedBase
+    const origin = formData.get('origin') as string | null
+    if (origin) {
+      try {
+        const trustedHost = new URL(trustedBase).host
+        const originHost = new URL(origin).host
+        if (originHost === trustedHost) {
+          appUrl = origin
+        }
+      } catch {
+        // ignore invalid origin
+      }
+    }
 
     // Check if user already exists
     const existingUser = await prisma.user.findUnique({
