@@ -31,6 +31,57 @@ describe('createInitialState', () => {
     expect(state.dice).toEqual([1, 1, 1, 1, 1])
     expect(state.winner).toBe(null)
   })
+
+  it('uses ruleset maxRolls when provided', () => {
+    const players = [
+      { userId: 'user1', displayName: 'Alice' },
+      { userId: 'user2', displayName: 'Bob' }
+    ]
+    const settings = {
+      turnTimer: 60,
+      afkThreshold: 3,
+      kniffelRuleset: { maxRolls: 4 }
+    }
+
+    const state = createInitialState(players, settings)
+
+    expect(state.rollsRemaining).toBe(4)
+  })
+
+  it('creates scoresheet columns for triple preset', () => {
+    const players = [
+      { userId: 'user1', displayName: 'Alice' },
+      { userId: 'user2', displayName: 'Bob' }
+    ]
+    const settings = {
+      turnTimer: 60,
+      afkThreshold: 3,
+      kniffelPreset: 'triple'
+    }
+
+    const state = createInitialState(players, settings)
+    const scoresheet = state.players[0].scoresheet as { columns: Record<string, unknown>[] }
+
+    expect(scoresheet.columns).toHaveLength(3)
+  })
+
+  it('initializes duel match state when duel enabled', () => {
+    const players = [
+      { userId: 'user1', displayName: 'Alice' },
+      { userId: 'user2', displayName: 'Bob' }
+    ]
+    const settings = {
+      turnTimer: 60,
+      afkThreshold: 3,
+      kniffelRuleset: { duelEnabled: true }
+    }
+
+    const state = createInitialState(players, settings)
+
+    expect(state.matchState?.mode).toBe('duel')
+    expect(state.matchState?.round).toBe(1)
+    expect(state.matchState?.roundWinners).toEqual([])
+  })
 })
 
 describe('applyAction - PLAYER_READY', () => {
@@ -113,6 +164,65 @@ describe('applyAction - ROLL_DICE', () => {
     if (!(result instanceof Error)) {
       expect(result.dice).toEqual([3, 4, 5, 6, 2])
       expect(result.rollsRemaining).toBe(2)
+    }
+  })
+
+  it('runs onBeforeRoll effects', () => {
+    let state = createInitialState(
+      [
+        { userId: 'user1', displayName: 'Alice' },
+        { userId: 'user2', displayName: 'Bob' }
+      ],
+      { turnTimer: 60, afkThreshold: 3 }
+    )
+
+    state = applyAction(state, { type: 'PLAYER_READY' }, 'user1') as GameState
+    state = applyAction(state, { type: 'PLAYER_READY' }, 'user2') as GameState
+    state = {
+      ...state,
+      modifiers: {
+        effects: [
+          {
+            hook: 'onBeforeRoll',
+            apply: (s: GameState) => ({ ...s, effectApplied: true })
+          }
+        ]
+      }
+    }
+
+    const result = applyAction(state, {
+      type: 'ROLL_DICE',
+      keptDice: [false, false, false, false, false],
+      newDice: [3, 4, 5, 6, 2]
+    }, 'user1')
+
+    expect(result).not.toBeInstanceOf(Error)
+    if (!(result instanceof Error)) {
+      expect((result as GameState & { effectApplied?: boolean }).effectApplied).toBe(true)
+    }
+  })
+
+  it('transitions to draft_claim after rolling in draft mode', () => {
+    let state = createInitialState(
+      [
+        { userId: 'user1', displayName: 'Alice' },
+        { userId: 'user2', displayName: 'Bob' }
+      ],
+      { turnTimer: 60, afkThreshold: 3, kniffelRuleset: { draftEnabled: true } }
+    )
+
+    state = applyAction(state, { type: 'PLAYER_READY' }, 'user1') as GameState
+    state = applyAction(state, { type: 'PLAYER_READY' }, 'user2') as GameState
+
+    const result = applyAction(state, {
+      type: 'ROLL_DICE',
+      keptDice: [false, false, false, false, false],
+      newDice: [3, 4, 5, 6, 2]
+    }, 'user1')
+
+    expect(result).not.toBeInstanceOf(Error)
+    if (!(result instanceof Error)) {
+      expect(result.phase).toBe('draft_claim')
     }
   })
 
@@ -270,6 +380,29 @@ describe('applyAction - CHOOSE_CATEGORY', () => {
     }
   })
 
+  it('scores category into chosen column', () => {
+    let state = createInitialState(
+      [
+        { userId: 'user1', displayName: 'Alice' },
+        { userId: 'user2', displayName: 'Bob' }
+      ],
+      { turnTimer: 60, afkThreshold: 3, kniffelPreset: 'triple' }
+    )
+
+    state = applyAction(state, { type: 'PLAYER_READY' }, 'user1') as GameState
+    state = applyAction(state, { type: 'PLAYER_READY' }, 'user2') as GameState
+    state = { ...state, dice: [1, 1, 1, 1, 1], rollsRemaining: 2 }
+
+    const action: GameAction = { type: 'CHOOSE_CATEGORY', category: 'ones', columnIndex: 1 }
+    const result = applyAction(state, action, 'user1')
+
+    expect(result).not.toBeInstanceOf(Error)
+    if (!(result instanceof Error)) {
+      const scoresheet = result.players[0].scoresheet as { columns: Record<string, number>[] }
+      expect(scoresheet.columns[1].ones).toBe(5)
+    }
+  })
+
   it('returns error if category already scored', () => {
     let state = createInitialState(
       [
@@ -358,6 +491,186 @@ describe('applyAction - CHOOSE_CATEGORY', () => {
     expect(result).toBeInstanceOf(Error)
     expect((result as Error).message).toContain('Must roll at least once')
   })
+
+  it('uses ruleset maxRolls when validating first roll requirement', () => {
+    let state = createInitialState(
+      [
+        { userId: 'user1', displayName: 'Alice' },
+        { userId: 'user2', displayName: 'Bob' }
+      ],
+      {
+        turnTimer: 60,
+        afkThreshold: 3,
+        kniffelRuleset: { maxRolls: 4 }
+      }
+    )
+
+    state = applyAction(state, { type: 'PLAYER_READY' }, 'user1') as GameState
+    state = applyAction(state, { type: 'PLAYER_READY' }, 'user2') as GameState
+
+    const result = applyAction(state, { type: 'CHOOSE_CATEGORY', category: 'threes' }, 'user1')
+
+    expect(result).toBeInstanceOf(Error)
+    expect((result as Error).message).toContain('Must roll at least once')
+  })
+
+  it('returns error when scratch is disallowed and score is zero', () => {
+    let state = createInitialState(
+      [
+        { userId: 'user1', displayName: 'Alice' },
+        { userId: 'user2', displayName: 'Bob' }
+      ],
+      {
+        turnTimer: 60,
+        afkThreshold: 3,
+        kniffelRuleset: { allowScratch: false }
+      }
+    )
+
+    state = applyAction(state, { type: 'PLAYER_READY' }, 'user1') as GameState
+    state = applyAction(state, { type: 'PLAYER_READY' }, 'user2') as GameState
+
+    state = applyAction(state, {
+      type: 'ROLL_DICE',
+      keptDice: [false, false, false, false, false],
+      newDice: [1, 2, 3, 4, 5]
+    }, 'user1') as GameState
+
+    const result = applyAction(state, { type: 'CHOOSE_CATEGORY', category: 'fullHouse' }, 'user1')
+
+    expect(result).toBeInstanceOf(Error)
+    expect((result as Error).message).toContain('Scratch not allowed')
+  })
+
+  it('allows auto score when scratch is disallowed and speed mode is enabled', () => {
+    let state = createInitialState(
+      [
+        { userId: 'user1', displayName: 'Alice' },
+        { userId: 'user2', displayName: 'Bob' }
+      ],
+      {
+        turnTimer: 60,
+        afkThreshold: 3,
+        kniffelRuleset: {
+          allowScratch: false,
+          speedMode: { enabled: true, autoScore: true }
+        }
+      }
+    )
+
+    state = applyAction(state, { type: 'PLAYER_READY' }, 'user1') as GameState
+    state = applyAction(state, { type: 'PLAYER_READY' }, 'user2') as GameState
+
+    state = applyAction(state, {
+      type: 'ROLL_DICE',
+      keptDice: [false, false, false, false, false],
+      newDice: [1, 2, 3, 4, 5]
+    }, 'user1') as GameState
+
+    const result = applyAction(
+      state,
+      { type: 'CHOOSE_CATEGORY', category: 'fullHouse', auto: true },
+      'user1'
+    )
+
+    expect(result).not.toBeInstanceOf(Error)
+    if (!(result instanceof Error)) {
+      expect(result.players[0].scoresheet.fullHouse).toBe(0)
+    }
+  })
+
+  it('returns error when category is disabled by ruleset', () => {
+    let state = createInitialState(
+      [
+        { userId: 'user1', displayName: 'Alice' },
+        { userId: 'user2', displayName: 'Bob' }
+      ],
+      {
+        turnTimer: 60,
+        afkThreshold: 3,
+        kniffelRuleset: {
+          categoryRandomizer: {
+            enabled: true,
+            disabledCategories: ['chance'],
+            specialCategories: []
+          }
+        }
+      }
+    )
+
+    state = applyAction(state, { type: 'PLAYER_READY' }, 'user1') as GameState
+    state = applyAction(state, { type: 'PLAYER_READY' }, 'user2') as GameState
+
+    state = applyAction(state, {
+      type: 'ROLL_DICE',
+      keptDice: [false, false, false, false, false],
+      newDice: [1, 2, 3, 4, 5]
+    }, 'user1') as GameState
+
+    const result = applyAction(state, { type: 'CHOOSE_CATEGORY', category: 'chance' }, 'user1')
+
+    expect(result).toBeInstanceOf(Error)
+    expect((result as Error).message).toContain('Category disabled')
+  })
+})
+
+describe('applyAction - USE_JOKER', () => {
+  it('consumes joker and adjusts die', () => {
+    let state = createInitialState(
+      [
+        { userId: 'user1', displayName: 'Alice' },
+        { userId: 'user2', displayName: 'Bob' }
+      ],
+      {
+        turnTimer: 60,
+        afkThreshold: 3,
+        kniffelRuleset: { jokerCount: 1, jokerMaxPerTurn: 1 }
+      }
+    )
+
+    state = applyAction(state, { type: 'PLAYER_READY' }, 'user1') as GameState
+    state = applyAction(state, { type: 'PLAYER_READY' }, 'user2') as GameState
+    state = { ...state, dice: [1, 2, 3, 4, 5], rollsRemaining: 2 }
+
+    const result = applyAction(state, { type: 'USE_JOKER', dieIndex: 0, delta: 1 }, 'user1')
+
+    expect(result).not.toBeInstanceOf(Error)
+    if (!(result instanceof Error)) {
+      expect(result.dice[0]).toBe(2)
+      expect(result.modifiers?.jokersByUserId?.user1).toBe(0)
+    }
+  })
+})
+
+describe('applyAction - TAKE_RISK_ROLL', () => {
+  it('allows risk roll after rolls exhausted', () => {
+    let state = createInitialState(
+      [
+        { userId: 'user1', displayName: 'Alice' },
+        { userId: 'user2', displayName: 'Bob' }
+      ],
+      {
+        turnTimer: 60,
+        afkThreshold: 3,
+        kniffelRuleset: { riskRollEnabled: true, riskRollThreshold: 24 }
+      }
+    )
+
+    state = applyAction(state, { type: 'PLAYER_READY' }, 'user1') as GameState
+    state = applyAction(state, { type: 'PLAYER_READY' }, 'user2') as GameState
+    state = { ...state, dice: [1, 1, 1, 1, 1], rollsRemaining: 0 }
+
+    const result = applyAction(state, {
+      type: 'TAKE_RISK_ROLL',
+      newDice: [6, 6, 6, 6, 1]
+    }, 'user1')
+
+    expect(result).not.toBeInstanceOf(Error)
+    if (!(result instanceof Error)) {
+      expect(result.dice).toEqual([6, 6, 6, 6, 1])
+      expect(result.matchState?.riskDebt).toBe(false)
+    }
+  })
 })
 
 describe('advanceTurn', () => {
@@ -417,6 +730,28 @@ describe('advanceTurn', () => {
     expect(newState.round).toBe(2)
     expect(newState.currentPlayerIndex).toBe(0)
   })
+
+  it('resets rollsRemaining based on ruleset maxRolls', () => {
+    let state = createInitialState(
+      [
+        { userId: 'user1', displayName: 'Alice' },
+        { userId: 'user2', displayName: 'Bob' }
+      ],
+      {
+        turnTimer: 60,
+        afkThreshold: 3,
+        kniffelRuleset: { maxRolls: 4 }
+      }
+    )
+
+    state.phase = 'rolling'
+    state.currentPlayerIndex = 0
+    state.rollsRemaining = 1
+
+    const newState = advanceTurn(state)
+
+    expect(newState.rollsRemaining).toBe(4)
+  })
 })
 
 describe('checkGameEnd', () => {
@@ -445,6 +780,23 @@ describe('checkGameEnd', () => {
 
     expect(newState.phase).toBe('ended')
     expect(newState.winner).toBe('user1') // Alice has higher score
+  })
+
+  it('uses column multipliers when determining winner', () => {
+    const state = createInitialState(
+      [
+        { userId: 'user1', displayName: 'Alice' },
+        { userId: 'user2', displayName: 'Bob' }
+      ],
+      { turnTimer: 60, afkThreshold: 3, kniffelPreset: 'triple' }
+    )
+
+    state.players[0].scoresheet = { columns: [{ ones: 6 }, {}, {}] }
+    state.players[1].scoresheet = { columns: [{}, {}, { ones: 3 }] }
+
+    const newState = checkGameEnd(state)
+
+    expect(newState.winner).toBe('user2')
   })
 })
 

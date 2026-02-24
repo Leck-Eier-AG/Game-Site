@@ -1,5 +1,7 @@
 # Kniffel Feature Expansion Implementation Plan
 
+> Status note (2026-02-24): Core scaffolding is in place for Phase 2–5 (ruleset fields, triple columns, jokers, draft phase, duel match state, risk roll, daily seed, ladder/daily persistence models, constraints pipeline, effects skeleton, UI toggles, and server wiring). Full gameplay implementations per mode continue to build on this foundation.
+
 ## 1) Current Baseline (What exists today)
 
 This codebase already has a solid classic Kniffel core:

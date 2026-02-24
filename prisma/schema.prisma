@@ -60,6 +60,27 @@ model GameRoom {
   host          User     @relation("HostedRooms", fields: [hostId], references: [id])
 }
 
+model DailyChallengeScore {
+  id        String   @id @default(cuid())
+  userId    String
+  date      String
+  value     Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, date])
+  @@index([date])
+}
+
+model KniffelLadderProgress {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  rung      Int      @default(0)
+  bestScore Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model Wallet {
   id                String    @id @default(cuid())
   userId            String    @unique

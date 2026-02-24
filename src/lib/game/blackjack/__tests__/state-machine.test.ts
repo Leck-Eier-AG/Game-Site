@@ -330,6 +330,9 @@ describe('Blackjack State Machine', () => {
 
       state = applyBlackjackAction(state, { type: 'PLACE_BET', payload: { amount: 100 } }, 'user1') as BlackjackGameState;
 
+      // Ensure dealer's visible card is not Ace
+      state.dealer.cards[0] = { rank: 'K', suit: 'spades' };
+
       const result = applyBlackjackAction(state, { type: 'INSURANCE', payload: { amount: 50 } }, 'user1');
 
       expect(result).toBeInstanceOf(Error);

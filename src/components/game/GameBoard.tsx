@@ -151,12 +151,13 @@ export function GameBoard({ gameState, roomId, currentUserId, hostId, socket, is
     setLocalGameState(prev => ({ ...prev, keptDice: newKeptDice }))
   }
 
-  const handleSelectCategory = (category: ScoreCategory) => {
+  const handleSelectCategory = (category: ScoreCategory, columnIndex?: number) => {
     if (!isMyTurn || isPaused || localGameState.rollsRemaining === 3 || isAnimating) return
 
     socket.emit('game:choose-category', {
       roomId,
-      category
+      category,
+      columnIndex
     }, (response: { success?: boolean; error?: string }) => {
       if (response?.error) {
         toast.error(response.error)
@@ -459,6 +460,7 @@ export function GameBoard({ gameState, roomId, currentUserId, hostId, socket, is
             currentUserId={currentUserId}
             dice={localGameState.dice}
             rollsRemaining={localGameState.rollsRemaining}
+            ruleset={localGameState.ruleset}
             onSelectCategory={handleSelectCategory}
             canScore={canScore}
           />

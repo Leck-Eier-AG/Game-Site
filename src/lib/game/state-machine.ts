@@ -7,15 +7,22 @@ import type {
   ScoreCategory,
   KniffelScoresheet,
   KniffelMode,
-  TeamInfo
+  TeamInfo,
+  KniffelPreset,
+  KniffelRuleset
 } from '@/types/game'
-import { calculateScore, calculateTotalScore } from './kniffel-rules'
+import { calculateScoreWithRuleset, calculateTotalScore, calculateTotalScoreWithRuleset } from './kniffel-rules'
+import { resolveKniffelRuleset } from './kniffel-ruleset'
+import { isCategoryAllowedByConstraints } from './constraints'
+import { applyEffects } from './kniffel-effects'
 
 // Action types
 export type GameAction =
   | { type: 'PLAYER_READY' }
   | { type: 'ROLL_DICE'; keptDice: boolean[]; newDice: DiceValue[] }
-  | { type: 'CHOOSE_CATEGORY'; category: ScoreCategory }
+  | { type: 'CHOOSE_CATEGORY'; category: ScoreCategory; auto?: boolean; columnIndex?: number }
+  | { type: 'USE_JOKER'; dieIndex: number; delta: 1 | -1 }
+  | { type: 'TAKE_RISK_ROLL'; newDice: DiceValue[] }
   | { type: 'PLAYER_DISCONNECT'; userId: string }
   | { type: 'PLAYER_RECONNECT'; userId: string }
 
@@ -24,8 +31,17 @@ export type GameAction =
  */
 export function createInitialState(
   players: Array<{ userId: string; displayName: string }>,
-  settings: { turnTimer: number; afkThreshold: number; kniffelMode?: KniffelMode; teams?: TeamInfo[] }
+  settings: {
+    turnTimer: number
+    afkThreshold: number
+    kniffelMode?: KniffelMode
+    kniffelPreset?: KniffelPreset
+    kniffelRuleset?: Partial<KniffelRuleset>
+    teams?: TeamInfo[]
+  }
 ): GameState {
+  const ruleset = resolveKniffelRuleset(settings.kniffelPreset || 'classic', settings.kniffelRuleset)
+
   const teamByUserId = new Map<string, string>()
   for (const team of settings.teams || []) {
     for (const memberUserId of team.memberUserIds) {
@@ -33,27 +49,54 @@ export function createInitialState(
     }
   }
 
+  const makeScoresheet = (): PlayerState['scoresheet'] => {
+    if (ruleset.columnCount > 1) {
+      return {
+        columns: Array.from({ length: ruleset.columnCount }, () => ({}))
+      }
+    }
+
+    return {}
+  }
+
   const playerStates: PlayerState[] = players.map(p => ({
     userId: p.userId,
     displayName: p.displayName,
     teamId: teamByUserId.get(p.userId),
-    scoresheet: {},
+    scoresheet: makeScoresheet(),
     isReady: false,
     isConnected: true,
     lastActivity: Date.now(),
     consecutiveInactive: 0
   }))
 
+  const maxRolls = ruleset.maxRolls || 3
+  const jokersByUserId = ruleset.jokerCount > 0
+    ? Object.fromEntries(players.map(player => [player.userId, ruleset.jokerCount]))
+    : undefined
+  const jokersUsedThisTurnByUserId = ruleset.jokerCount > 0
+    ? Object.fromEntries(players.map(player => [player.userId, 0]))
+    : undefined
+  const matchState = ruleset.duelEnabled
+    ? { mode: 'duel' as const, round: 1, roundWinners: [] as string[] }
+    : undefined
+
   return {
     phase: 'waiting',
     kniffelMode: settings.kniffelMode || 'classic',
+    ruleset,
+    rulesVersion: 1,
+    matchState,
+    modifiers: jokersByUserId
+      ? { jokersByUserId, jokersUsedThisTurnByUserId }
+      : undefined,
     teams: settings.teams || [],
     players: playerStates,
     spectators: [],
     currentPlayerIndex: 0,
     dice: [1, 1, 1, 1, 1],
     keptDice: [false, false, false, false, false],
-    rollsRemaining: 3,
+    rollsRemaining: maxRolls,
     round: 1,
     turnStartedAt: null,
     turnDuration: settings.turnTimer,
@@ -83,7 +126,13 @@ export function applyAction(
       return handleRollDice(state, userId, action.keptDice, action.newDice)
 
     case 'CHOOSE_CATEGORY':
-      return handleChooseCategory(state, userId, action.category)
+      return handleChooseCategory(state, userId, action.category, action.auto, action.columnIndex)
+
+    case 'USE_JOKER':
+      return handleUseJoker(state, userId, action.dieIndex, action.delta)
+
+    case 'TAKE_RISK_ROLL':
+      return handleTakeRiskRoll(state, userId, action.newDice)
 
     case 'PLAYER_DISCONNECT':
       return handlePlayerDisconnect(state, action.userId)
@@ -112,7 +161,9 @@ export function isValidAction(
  * Advance to the next player's turn
  */
 export function advanceTurn(state: GameState): GameState {
+  const maxRolls = state.ruleset?.maxRolls || 3
   const nextPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length
+  const nextPlayerId = state.players[nextPlayerIndex]?.userId
 
   // Check if we completed a full round
   let newRound = state.round
@@ -127,10 +178,19 @@ export function advanceTurn(state: GameState): GameState {
   const newState: GameState = {
     ...state,
     currentPlayerIndex: nextPlayerIndex,
-    rollsRemaining: 3,
+    rollsRemaining: maxRolls,
     keptDice: [false, false, false, false, false],
     round: newRound,
-    turnStartedAt: Date.now()
+    turnStartedAt: Date.now(),
+    modifiers: state.modifiers?.jokersUsedThisTurnByUserId && nextPlayerId
+      ? {
+        ...state.modifiers,
+        jokersUsedThisTurnByUserId: {
+          ...state.modifiers.jokersUsedThisTurnByUserId,
+          [nextPlayerId]: 0
+        }
+      }
+      : state.modifiers
   }
 
   // Check if game should end (after round 13)
@@ -145,10 +205,11 @@ export function advanceTurn(state: GameState): GameState {
  * Check if game should end and determine winner
  */
 export function checkGameEnd(state: GameState): GameState {
+  const ruleset = state.ruleset || resolveKniffelRuleset('classic')
   // Calculate total scores for all players
   const scores = state.players.map(player => ({
     userId: player.userId,
-    total: calculateTotalScore(player.scoresheet)
+    total: calculateTotalScoreWithRuleset(player.scoresheet, ruleset)
   }))
 
   // Find winner (highest score)
@@ -199,19 +260,21 @@ function handleRollDice(
   keptDice: boolean[],
   newDice: DiceValue[]
 ): GameState | Error {
+  const effectState = applyEffects(state, 'onBeforeRoll')
+
   // Must be in rolling phase
-  if (state.phase !== 'rolling') {
+  if (effectState.phase !== 'rolling') {
     return new Error('Not in rolling phase')
   }
 
   // Must be current player
-  const currentPlayer = state.players[state.currentPlayerIndex]
+  const currentPlayer = effectState.players[effectState.currentPlayerIndex]
   if (currentPlayer.userId !== userId) {
     return new Error('Not your turn')
   }
 
   // Must have rolls remaining
-  if (state.rollsRemaining <= 0) {
+  if (effectState.rollsRemaining <= 0) {
     return new Error('No rolls remaining')
   }
 
@@ -220,27 +283,33 @@ function handleRollDice(
 
   for (let i = 0; i < 5; i++) {
     if (keptDice[i]) {
-      resultDice[i] = state.dice[i] // Keep existing
+      resultDice[i] = effectState.dice[i] // Keep existing
     } else {
       resultDice[i] = newDice[i] // Use new (same index)
     }
   }
 
+  const ruleset = effectState.ruleset || resolveKniffelRuleset('classic')
+  const nextPhase = ruleset.draftEnabled ? 'draft_claim' : effectState.phase
+
   return {
-    ...state,
+    ...effectState,
     dice: resultDice,
     keptDice: [...keptDice],
-    rollsRemaining: state.rollsRemaining - 1
+    rollsRemaining: effectState.rollsRemaining - 1,
+    phase: nextPhase
   }
 }
 
 function handleChooseCategory(
   state: GameState,
   userId: string,
-  category: ScoreCategory
+  category: ScoreCategory,
+  auto: boolean | undefined,
+  columnIndex: number | undefined
 ): GameState | Error {
   // Must be in rolling phase
-  if (state.phase !== 'rolling') {
+  if (state.phase !== 'rolling' && state.phase !== 'draft_claim') {
     return new Error('Not in rolling phase')
   }
 
@@ -250,36 +319,189 @@ function handleChooseCategory(
     return new Error('Not your turn')
   }
 
+  const ruleset = state.ruleset || resolveKniffelRuleset('classic')
+
+  const currentScoresheet = currentPlayer.scoresheet
+  let targetScoresheet: KniffelScoresheet
+  let targetColumnIndex = 0
+  if ('columns' in currentScoresheet) {
+    targetColumnIndex = columnIndex ?? 0
+    targetScoresheet = currentScoresheet.columns[targetColumnIndex]
+    if (!targetScoresheet) {
+      return new Error('Invalid column')
+    }
+  } else {
+    targetScoresheet = currentScoresheet
+  }
+
   // Must have rolled at least once
-  if (state.rollsRemaining === 3) {
+  const maxRolls = ruleset.maxRolls || 3
+  if (state.rollsRemaining === maxRolls) {
     return new Error('Must roll at least once before scoring')
   }
 
   // Category must not be scored yet
-  if (currentPlayer.scoresheet[category] !== undefined) {
+  if (targetScoresheet[category] !== undefined) {
     return new Error('Category already scored')
   }
 
   // Calculate score
-  const score = calculateScore(category, state.dice)
+  if (ruleset.categoryRandomizer.enabled) {
+    const baseCategories: ScoreCategory[] = [
+      'ones', 'twos', 'threes', 'fours', 'fives', 'sixes',
+      'threeOfKind', 'fourOfKind', 'fullHouse',
+      'smallStraight', 'largeStraight', 'kniffel', 'chance'
+    ]
+    const disabled = new Set(ruleset.categoryRandomizer.disabledCategories)
+    const allowed = [...baseCategories, ...ruleset.categoryRandomizer.specialCategories]
+      .filter(cat => !disabled.has(cat))
+
+    if (!allowed.includes(category)) {
+      return new Error('Category disabled')
+    }
+  }
+
+  if (ruleset.constraintsEnabled) {
+    const constraints = state.matchState?.constraints ?? []
+    if (!isCategoryAllowedByConstraints(constraints, category)) {
+      return new Error('Category blocked by constraints')
+    }
+  }
+
+  const score = calculateScoreWithRuleset(category, state.dice, ruleset)
+
+  if (!ruleset.allowScratch && score === 0) {
+    if (auto && ruleset.speedMode.autoScore) {
+      // Allow auto-scoring a zero in speed mode
+    } else {
+      return new Error('Scratch not allowed')
+    }
+  }
 
   // Update player's scoresheet
-  const newPlayers = [...state.players]
-  newPlayers[state.currentPlayerIndex] = {
-    ...currentPlayer,
-    scoresheet: {
-      ...currentPlayer.scoresheet,
+  let updatedScoresheet: PlayerState['scoresheet']
+  if ('columns' in currentScoresheet) {
+    const columns = currentScoresheet.columns.map((column, index) => {
+      if (index !== targetColumnIndex) {
+        return column
+      }
+      return {
+        ...column,
+        [category]: score
+      }
+    })
+    updatedScoresheet = { columns }
+  } else {
+    updatedScoresheet = {
+      ...currentScoresheet,
       [category]: score
     }
   }
 
+  const newPlayers = [...state.players]
+  newPlayers[state.currentPlayerIndex] = {
+    ...currentPlayer,
+    scoresheet: updatedScoresheet
+  }
+
   const newState: GameState = {
     ...state,
-    players: newPlayers
+    players: newPlayers,
+    phase: ruleset.draftEnabled ? 'rolling' : state.phase
   }
 
   // Advance turn
   return advanceTurn(newState)
+}
+
+function handleUseJoker(
+  state: GameState,
+  userId: string,
+  dieIndex: number,
+  delta: 1 | -1
+): GameState | Error {
+  if (state.phase !== 'rolling') {
+    return new Error('Not in rolling phase')
+  }
+
+  const currentPlayer = state.players[state.currentPlayerIndex]
+  if (currentPlayer.userId !== userId) {
+    return new Error('Not your turn')
+  }
+
+  const ruleset = state.ruleset || resolveKniffelRuleset('classic')
+  const jokers = state.modifiers?.jokersByUserId?.[userId] ?? 0
+  if (jokers <= 0) {
+    return new Error('No jokers remaining')
+  }
+
+  const usedThisTurn = state.modifiers?.jokersUsedThisTurnByUserId?.[userId] ?? 0
+  if (ruleset.jokerMaxPerTurn > 0 && usedThisTurn >= ruleset.jokerMaxPerTurn) {
+    return new Error('Joker limit reached for this turn')
+  }
+
+  if (dieIndex < 0 || dieIndex >= state.dice.length) {
+    return new Error('Invalid die index')
+  }
+
+  const nextValue = Math.min(6, Math.max(1, state.dice[dieIndex] + delta)) as DiceValue
+  const nextDice = [...state.dice] as DiceValues
+  nextDice[dieIndex] = nextValue
+
+  return {
+    ...state,
+    dice: nextDice,
+    modifiers: {
+      ...state.modifiers,
+      jokersByUserId: {
+        ...state.modifiers?.jokersByUserId,
+        [userId]: jokers - 1
+      },
+      jokersUsedThisTurnByUserId: {
+        ...state.modifiers?.jokersUsedThisTurnByUserId,
+        [userId]: usedThisTurn + 1
+      }
+    }
+  }
+}
+
+function handleTakeRiskRoll(
+  state: GameState,
+  userId: string,
+  newDice: DiceValue[]
+): GameState | Error {
+  if (state.phase !== 'rolling') {
+    return new Error('Not in rolling phase')
+  }
+
+  const currentPlayer = state.players[state.currentPlayerIndex]
+  if (currentPlayer.userId !== userId) {
+    return new Error('Not your turn')
+  }
+
+  const ruleset = state.ruleset || resolveKniffelRuleset('classic')
+  if (!ruleset.riskRollEnabled) {
+    return new Error('Risk roll disabled')
+  }
+
+  if (state.rollsRemaining > 0) {
+    return new Error('Risk roll only allowed after rolls exhausted')
+  }
+
+  const nextDice = newDice as DiceValues
+  const sum = nextDice.reduce((total, die) => total + die, 0)
+  const riskDebt = sum < ruleset.riskRollThreshold
+
+  return {
+    ...state,
+    dice: nextDice,
+    keptDice: [false, false, false, false, false],
+    matchState: {
+      ...state.matchState,
+      mode: 'risk',
+      riskDebt
+    }
+  }
 }
 
 function handlePlayerDisconnect(state: GameState, userId: string): GameState | Error {

@@ -12,7 +12,8 @@ import { Badge } from '@/components/ui/badge'
 import { Coins, Dices, CircleDot, Spade } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
-import { RoomSettings, GameType, KniffelMode } from '@/types/game'
+import { RoomSettings, GameType, KniffelMode, KniffelPreset, ScoreCategory } from '@/types/game'
+import { buildKniffelRulesetOverrides } from '@/lib/game/kniffel-ruleset'
 
 interface CreateRoomDialogProps {
   open: boolean
@@ -29,6 +30,7 @@ export function CreateRoomDialog({ open, onOpenChange }: CreateRoomDialogProps) 
 
   const [gameType, setGameType] = useState<GameType>('kniffel')
   const [kniffelMode, setKniffelMode] = useState<KniffelMode>('classic')
+  const [kniffelPreset, setKniffelPreset] = useState<KniffelPreset>('classic')
   const [roomName, setRoomName] = useState('')
   const [maxPlayers, setMaxPlayers] = useState('4')
   const [turnTimer, setTurnTimer] = useState('60')
@@ -49,9 +51,35 @@ export function CreateRoomDialog({ open, onOpenChange }: CreateRoomDialogProps) 
   // Game-specific settings
   const [spinTimer, setSpinTimer] = useState('30')
   const [startingBlinds, setStartingBlinds] = useState('10')
+  const [allowScratch, setAllowScratch] = useState(true)
+  const [strictStraights, setStrictStraights] = useState(false)
+  const [fullHouseUsesSum, setFullHouseUsesSum] = useState(false)
+  const [maxRolls, setMaxRolls] = useState('3')
+  const [speedModeEnabled, setSpeedModeEnabled] = useState(false)
+  const [draftEnabled, setDraftEnabled] = useState(false)
+  const [duelEnabled, setDuelEnabled] = useState(false)
+  const [categoryRandomizerEnabled, setCategoryRandomizerEnabled] = useState(false)
+  const [disabledCategories, setDisabledCategories] = useState<ScoreCategory[]>([])
+  const [specialCategories, setSpecialCategories] = useState<ScoreCategory[]>([])
 
   const isCasinoGame = CASINO_GAMES.includes(gameType)
   const isFixedTeamSize = gameType === 'kniffel' && (kniffelMode === 'team2v2' || kniffelMode === 'team3v3')
+  const baseCategoryOptions: ScoreCategory[] = [
+    'ones', 'twos', 'threes', 'fours', 'fives', 'sixes',
+    'threeOfKind', 'fourOfKind', 'fullHouse',
+    'smallStraight', 'largeStraight', 'kniffel', 'chance'
+  ]
+  const specialCategoryOptions: ScoreCategory[] = ['twoPairs', 'allEven', 'sumAtLeast24']
+
+  const toggleCategory = (
+    category: ScoreCategory,
+    list: ScoreCategory[],
+    setList: (value: ScoreCategory[] | ((prev: ScoreCategory[]) => ScoreCategory[])) => void
+  ) => {
+    setList(list.includes(category)
+      ? list.filter(item => item !== category)
+      : [...list, category])
+  }
 
   // Auto-set isBetRoom for casino games
   useEffect(() => {
@@ -115,6 +143,21 @@ export function CreateRoomDialog({ open, onOpenChange }: CreateRoomDialogProps) 
       name: roomName.trim(),
       gameType,
       kniffelMode: gameType === 'kniffel' ? kniffelMode : undefined,
+      kniffelPreset: gameType === 'kniffel' ? kniffelPreset : undefined,
+      kniffelRuleset: gameType === 'kniffel'
+        ? buildKniffelRulesetOverrides({
+          allowScratch,
+          strictStraights,
+          fullHouseUsesSum,
+          maxRolls: parseInt(maxRolls, 10),
+          speedModeEnabled,
+          categoryRandomizerEnabled,
+          disabledCategories,
+          specialCategories,
+          draftEnabled,
+          duelEnabled
+        })
+        : undefined,
       maxPlayers: parseInt(maxPlayers, 10),
       isPrivate,
       turnTimer: parseInt(turnTimer, 10),
@@ -151,6 +194,7 @@ export function CreateRoomDialog({ open, onOpenChange }: CreateRoomDialogProps) 
         // Reset form
         setGameType('kniffel')
         setKniffelMode('classic')
+        setKniffelPreset('classic')
         setRoomName('')
         setMaxPlayers('4')
         setTurnTimer('60')
@@ -168,6 +212,16 @@ export function CreateRoomDialog({ open, onOpenChange }: CreateRoomDialogProps) 
         ])
         setSpinTimer('30')
         setStartingBlinds('10')
+        setAllowScratch(true)
+        setStrictStraights(false)
+        setFullHouseUsesSum(false)
+        setMaxRolls('3')
+        setSpeedModeEnabled(false)
+        setDraftEnabled(false)
+        setDuelEnabled(false)
+        setCategoryRandomizerEnabled(false)
+        setDisabledCategories([])
+        setSpecialCategories([])
         // Navigate to game room
         router.push(`/game/${response.roomId}`)
       } else {
@@ -260,6 +314,26 @@ export function CreateRoomDialog({ open, onOpenChange }: CreateRoomDialogProps) 
             {gameType === 'kniffel' && (
               <>
                 <div className="space-y-2">
+                  <Label htmlFor="kniffelPreset" className="text-white">
+                    Preset
+                  </Label>
+                  <Select value={kniffelPreset} onValueChange={(val) => setKniffelPreset(val as KniffelPreset)}>
+                    <SelectTrigger id="kniffelPreset" className="bg-zinc-800 border-zinc-700 text-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="classic">Classic</SelectItem>
+                      <SelectItem value="triple" disabled>Triple (Coming Soon)</SelectItem>
+                      <SelectItem value="draft" disabled>Draft (Coming Soon)</SelectItem>
+                      <SelectItem value="duel" disabled>Duel (Coming Soon)</SelectItem>
+                      <SelectItem value="daily" disabled>Daily (Coming Soon)</SelectItem>
+                      <SelectItem value="ladder" disabled>Ladder (Coming Soon)</SelectItem>
+                      <SelectItem value="roguelite" disabled>Roguelite (Coming Soon)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
                   <Label htmlFor="kniffelMode" className="text-white">
                     Modus
                   </Label>
@@ -277,6 +351,156 @@ export function CreateRoomDialog({ open, onOpenChange }: CreateRoomDialogProps) 
                     <p className="text-xs text-gray-400">
                       Team-Modi verwenden feste Spielerzahlen: 2v2 = 4, 3v3 = 6
                     </p>
+                  )}
+                </div>
+
+                <div className="space-y-2 border border-zinc-800 rounded-lg p-3">
+                  <p className="text-sm font-semibold text-white">Regel-Toggles</p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="allowScratch"
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={allowScratch}
+                      onChange={(e) => setAllowScratch(e.target.checked)}
+                    />
+                    <Label htmlFor="allowScratch" className="text-gray-300">
+                      Scratch erlauben
+                    </Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="strictStraights"
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={strictStraights}
+                      onChange={(e) => setStrictStraights(e.target.checked)}
+                    />
+                    <Label htmlFor="strictStraights" className="text-gray-300">
+                      Strikte Straßen
+                    </Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="fullHouseSum"
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={fullHouseUsesSum}
+                      onChange={(e) => setFullHouseUsesSum(e.target.checked)}
+                    />
+                    <Label htmlFor="fullHouseSum" className="text-gray-300">
+                      Full House = Summe
+                    </Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="maxRolls" className="text-gray-300">
+                      Max. Würfe
+                    </Label>
+                    <Select value={maxRolls} onValueChange={setMaxRolls}>
+                      <SelectTrigger id="maxRolls" className="bg-zinc-800 border-zinc-700 text-white">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="3">3</SelectItem>
+                        <SelectItem value="4">4 (Risk Roll)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="space-y-2 border border-zinc-800 rounded-lg p-3">
+                  <p className="text-sm font-semibold text-white">Speed Mode</p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="speedModeEnabled"
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={speedModeEnabled}
+                      onChange={(e) => setSpeedModeEnabled(e.target.checked)}
+                    />
+                    <Label htmlFor="speedModeEnabled" className="text-gray-300">
+                      Auto-Score bei Timeout
+                    </Label>
+                  </div>
+                </div>
+
+                <div className="space-y-2 border border-zinc-800 rounded-lg p-3">
+                  <p className="text-sm font-semibold text-white">Match Modes</p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="draftEnabled"
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={draftEnabled}
+                      onChange={(e) => setDraftEnabled(e.target.checked)}
+                    />
+                    <Label htmlFor="draftEnabled" className="text-gray-300">
+                      Draft Mode
+                    </Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="duelEnabled"
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={duelEnabled}
+                      onChange={(e) => setDuelEnabled(e.target.checked)}
+                    />
+                    <Label htmlFor="duelEnabled" className="text-gray-300">
+                      Duel Mode
+                    </Label>
+                  </div>
+                </div>
+
+                <div className="space-y-2 border border-zinc-800 rounded-lg p-3">
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="categoryRandomizerEnabled"
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={categoryRandomizerEnabled}
+                      onChange={(e) => setCategoryRandomizerEnabled(e.target.checked)}
+                    />
+                    <Label htmlFor="categoryRandomizerEnabled" className="text-gray-300">
+                      Category Randomizer
+                    </Label>
+                  </div>
+
+                  {categoryRandomizerEnabled && (
+                    <div className="space-y-3">
+                      <div>
+                        <p className="text-xs text-gray-400 mb-2">Deaktivierte Kategorien</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {baseCategoryOptions.map((category) => (
+                            <label key={category} className="flex items-center gap-2 text-xs text-gray-300">
+                              <input
+                                type="checkbox"
+                                className="h-3 w-3"
+                                checked={disabledCategories.includes(category)}
+                                onChange={() => toggleCategory(category, disabledCategories, setDisabledCategories)}
+                              />
+                              {category}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-400 mb-2">Special Categories</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {specialCategoryOptions.map((category) => (
+                            <label key={category} className="flex items-center gap-2 text-xs text-gray-300">
+                              <input
+                                type="checkbox"
+                                className="h-3 w-3"
+                                checked={specialCategories.includes(category)}
+                                onChange={() => toggleCategory(category, specialCategories, setSpecialCategories)}
+                              />
+                              {category}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
                   )}
                 </div>
 

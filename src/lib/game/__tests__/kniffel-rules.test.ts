@@ -1,10 +1,13 @@
-import type { DiceValues, KniffelScoresheet, ScoreCategory } from '@/types/game'
+import type { DiceValues, KniffelScoresheet, ScoreCategory, KniffelRuleset } from '@/types/game'
 import {
   calculateScore,
   getAvailableCategories,
   calculateUpperBonus,
   autoPickCategory,
   calculateTotalScore,
+  calculateScoreWithRuleset,
+  getAvailableCategoriesWithRuleset,
+  calculateTotalScoreWithRuleset,
 } from '../kniffel-rules'
 
 describe('calculateScore', () => {
@@ -161,6 +164,36 @@ describe('calculateScore', () => {
       expect(calculateScore('chance', [1, 1, 1, 1, 1])).toBe(5)
     })
   })
+
+  describe('Special categories', () => {
+    it('scores twoPairs when two distinct pairs exist', () => {
+      expect(calculateScore('twoPairs', [2, 2, 5, 5, 6])).toBe(20)
+      expect(calculateScore('twoPairs', [3, 3, 4, 4, 4])).toBe(18)
+    })
+
+    it('returns 0 for twoPairs when fewer than two pairs exist', () => {
+      expect(calculateScore('twoPairs', [2, 2, 3, 4, 5])).toBe(0)
+      expect(calculateScore('twoPairs', [2, 3, 4, 5, 6])).toBe(0)
+    })
+
+    it('scores allEven when all dice are even', () => {
+      expect(calculateScore('allEven', [2, 2, 4, 4, 6])).toBe(18)
+      expect(calculateScore('allEven', [2, 4, 6, 6, 6])).toBe(24)
+    })
+
+    it('returns 0 for allEven when any die is odd', () => {
+      expect(calculateScore('allEven', [1, 2, 4, 4, 6])).toBe(0)
+    })
+
+    it('scores sumAtLeast24 when sum is at least 24', () => {
+      expect(calculateScore('sumAtLeast24', [6, 6, 6, 4, 2])).toBe(24)
+      expect(calculateScore('sumAtLeast24', [6, 6, 6, 6, 6])).toBe(30)
+    })
+
+    it('returns 0 for sumAtLeast24 when sum is below 24', () => {
+      expect(calculateScore('sumAtLeast24', [1, 2, 3, 4, 5])).toBe(0)
+    })
+  })
 })
 
 describe('calculateUpperBonus', () => {
@@ -271,6 +304,31 @@ describe('getAvailableCategories', () => {
   })
 })
 
+describe('getAvailableCategoriesWithRuleset', () => {
+  const baseRuleset: KniffelRuleset = {
+    preset: 'classic',
+    allowScratch: true,
+    strictStraights: false,
+    fullHouseUsesSum: false,
+    maxRolls: 3,
+    categoryRandomizer: {
+      enabled: true,
+      disabledCategories: ['chance'],
+      specialCategories: ['twoPairs'],
+    },
+    speedMode: {
+      enabled: false,
+      autoScore: false,
+    },
+  }
+
+  it('excludes disabled categories and includes special categories', () => {
+    const available = getAvailableCategoriesWithRuleset({}, baseRuleset)
+    expect(available).not.toContain('chance')
+    expect(available).toContain('twoPairs')
+  })
+})
+
 describe('autoPickCategory', () => {
   it('picks category with highest score', () => {
     const dice: DiceValues = [5, 5, 5, 5, 5]
@@ -306,6 +364,31 @@ describe('autoPickCategory', () => {
     const result = autoPickCategory(dice, scoresheet)
     expect(result).toBeDefined()
     expect(getAvailableCategories(scoresheet)).toContain(result)
+  })
+
+  it('picks lowest-penalty category when scratch disallowed and all available scores are zero', () => {
+    const dice: DiceValues = [1, 1, 2, 3, 5]
+    const ruleset: KniffelRuleset = {
+      preset: 'classic',
+      allowScratch: false,
+      strictStraights: false,
+      fullHouseUsesSum: false,
+      maxRolls: 3,
+      categoryRandomizer: {
+        enabled: true,
+        disabledCategories: [
+          'ones', 'twos', 'threes', 'fours', 'fives', 'sixes', 'chance'
+        ],
+        specialCategories: [],
+      },
+      speedMode: {
+        enabled: true,
+        autoScore: true,
+      },
+    }
+
+    const result = autoPickCategory(dice, {}, ruleset)
+    expect(result).toBe('threeOfKind')
   })
 })
 
@@ -354,5 +437,110 @@ describe('calculateTotalScore', () => {
     }
     // Upper: 63 + bonus 35 = 98, Lower: 212, Total: 310
     expect(calculateTotalScore(scoresheet)).toBe(310)
+  })
+})
+
+describe('calculateTotalScoreWithRuleset', () => {
+  it('applies column multipliers in triple preset', () => {
+    const ruleset: KniffelRuleset = {
+      preset: 'triple',
+      allowScratch: true,
+      strictStraights: false,
+      fullHouseUsesSum: false,
+      maxRolls: 3,
+      columnCount: 3,
+      columnMultipliers: [1, 2, 3],
+      columnSelection: 'choose',
+      jokerCount: 0,
+      jokerMaxPerTurn: 0,
+      draftEnabled: false,
+      duelEnabled: false,
+      riskRollEnabled: false,
+      riskRollThreshold: 24,
+      dailyEnabled: false,
+      ladderEnabled: false,
+      constraintsEnabled: false,
+      rogueliteEnabled: false,
+      categoryRandomizer: {
+        enabled: false,
+        disabledCategories: [],
+        specialCategories: [],
+      },
+      speedMode: {
+        enabled: false,
+        autoScore: false,
+      },
+    }
+
+    const baseScoresheet: KniffelScoresheet = {
+      ones: 3,
+      twos: 6,
+      threes: 9,
+      fours: 12,
+      fives: 15,
+      sixes: 18,
+      threeOfKind: 20,
+      fourOfKind: 0,
+      fullHouse: 25,
+      smallStraight: 30,
+      largeStraight: 40,
+      kniffel: 50,
+      chance: 24,
+      twoPairs: null,
+      allEven: null,
+      sumAtLeast24: null,
+    }
+
+    const scoresheet = { columns: [baseScoresheet, baseScoresheet, baseScoresheet] }
+
+    expect(calculateTotalScoreWithRuleset(scoresheet, ruleset)).toBe(1722)
+  })
+})
+
+describe('calculateScoreWithRuleset', () => {
+  const baseRuleset: KniffelRuleset = {
+    preset: 'classic',
+    allowScratch: true,
+    strictStraights: false,
+    fullHouseUsesSum: false,
+    maxRolls: 3,
+    columnCount: 1,
+    columnMultipliers: [1],
+    columnSelection: 'choose',
+    jokerCount: 0,
+    jokerMaxPerTurn: 0,
+    draftEnabled: false,
+    duelEnabled: false,
+    riskRollEnabled: false,
+    riskRollThreshold: 24,
+    dailyEnabled: false,
+    ladderEnabled: false,
+    constraintsEnabled: false,
+    rogueliteEnabled: false,
+    categoryRandomizer: {
+      enabled: false,
+      disabledCategories: [],
+      specialCategories: [],
+    },
+    speedMode: {
+      enabled: false,
+      autoScore: false,
+    },
+  }
+
+  it('uses sum for full house when fullHouseUsesSum is true', () => {
+    const ruleset: KniffelRuleset = { ...baseRuleset, fullHouseUsesSum: true }
+    const dice = [2, 2, 2, 3, 3] as const
+
+    expect(calculateScoreWithRuleset('fullHouse', dice, ruleset)).toBe(12)
+  })
+
+  it('requires strict straight patterns when strictStraights is true', () => {
+    const ruleset: KniffelRuleset = { ...baseRuleset, strictStraights: true }
+
+    expect(calculateScoreWithRuleset('smallStraight', [1, 2, 3, 4, 5], ruleset)).toBe(30)
+    expect(calculateScoreWithRuleset('smallStraight', [2, 3, 4, 5, 6], ruleset)).toBe(0)
+    expect(calculateScoreWithRuleset('largeStraight', [2, 3, 4, 5, 6], ruleset)).toBe(40)
+    expect(calculateScoreWithRuleset('largeStraight', [1, 2, 3, 4, 5], ruleset)).toBe(0)
   })
 })
