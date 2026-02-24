@@ -1,14 +1,4 @@
-export type EffectHook =
-  | 'onTurnStart'
-  | 'onBeforeRoll'
-  | 'onAfterRoll'
-  | 'onScore'
-  | 'onRoundEnd'
-
-type Effect = {
-  hook: EffectHook
-  apply: (state: unknown) => unknown
-}
+import type { Effect, EffectHook } from '@/types/game'
 
 type EffectState = {
   modifiers?: {

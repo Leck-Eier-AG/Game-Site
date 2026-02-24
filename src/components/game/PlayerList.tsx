@@ -1,7 +1,8 @@
 'use client'
 
-import type { PlayerState } from '@/types/game'
-import { calculateTotalScore } from '@/lib/game/kniffel-rules'
+import type { KniffelRuleset, PlayerState } from '@/types/game'
+import { calculateTotalScoreWithRuleset } from '@/lib/game/kniffel-rules'
+import { resolveKniffelRuleset } from '@/lib/game/kniffel-ruleset'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Circle, Send } from 'lucide-react'
@@ -12,6 +13,7 @@ interface PlayerListProps {
   currentPlayerIndex: number
   currentUserId: string
   spectatorCount?: number
+  ruleset?: KniffelRuleset
 }
 
 export function PlayerList({
@@ -19,12 +21,15 @@ export function PlayerList({
   currentPlayerIndex,
   currentUserId,
   spectatorCount = 0,
+  ruleset,
 }: PlayerListProps) {
+  const effectiveRuleset = ruleset ?? resolveKniffelRuleset('classic')
+
   return (
     <div className="flex flex-wrap gap-3 rounded-lg bg-gray-800/50 p-4">
       {players.map((player, index) => {
         const isCurrentTurn = index === currentPlayerIndex
-        const score = calculateTotalScore(player.scoresheet)
+        const score = calculateTotalScoreWithRuleset(player.scoresheet, effectiveRuleset)
         const isCurrentUser = player.userId === currentUserId
         const teamLabel = player.teamId === 'team-a' ? 'Team A' : player.teamId === 'team-b' ? 'Team B' : null
 

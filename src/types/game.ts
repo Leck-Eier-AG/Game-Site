@@ -57,12 +57,24 @@ export interface MatchState {
   constraints?: string[]
 }
 
+export type EffectHook =
+  | 'onTurnStart'
+  | 'onBeforeRoll'
+  | 'onAfterRoll'
+  | 'onScore'
+  | 'onRoundEnd'
+
+export type Effect = {
+  hook: EffectHook
+  apply: (state: unknown) => unknown
+}
+
 export interface ModifiersState {
   jokersByUserId?: Record<string, number>
   jokersUsedThisTurnByUserId?: Record<string, number>
   perksByUserId?: Record<string, string[]>
   cursesByUserId?: Record<string, string[]>
-  effects?: Array<{ id: string; type: string; value: number; remainingTurns: number }>
+  effects?: Effect[]
   boss?: {
     id: string
     turnsRemaining: number

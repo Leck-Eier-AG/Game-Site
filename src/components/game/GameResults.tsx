@@ -1,8 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import type { PlayerState } from '@/types/game'
-import { calculateTotalScore, calculateUpperBonus } from '@/lib/game/kniffel-rules'
+import type { PlayerState, KniffelRuleset } from '@/types/game'
+import { buildPlayerResults, getCategoryScore } from '@/lib/game/kniffel-results'
 import { getResultsLowerCategories } from '@/lib/game/kniffel-categories'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -22,19 +22,14 @@ interface GameResultsProps {
   winnerId: string | null
   currentUserId: string
   payouts?: PayoutEntry[] | null
+  ruleset?: KniffelRuleset
 }
 
-export function GameResults({ players, winnerId, currentUserId, payouts }: GameResultsProps) {
+export function GameResults({ players, winnerId, currentUserId, payouts, ruleset }: GameResultsProps) {
   const [showDetails, setShowDetails] = useState(false)
 
   // Calculate rankings
-  const rankings = players
-    .map((player) => ({
-      ...player,
-      total: calculateTotalScore(player.scoresheet),
-      upperBonus: calculateUpperBonus(player.scoresheet)
-    }))
-    .sort((a, b) => b.total - a.total)
+  const rankings = buildPlayerResults(players, ruleset)
 
   const winner = rankings[0]
 
@@ -179,7 +174,7 @@ export function GameResults({ players, winnerId, currentUserId, payouts }: GameR
                         </TableCell>
                         {rankings.map((player) => (
                           <TableCell key={player.userId} className="text-center text-white">
-                            {player.scoresheet[category] ?? '-'}
+                            {getCategoryScore(player.scoresheet, category)}
                           </TableCell>
                         ))}
                       </TableRow>
@@ -215,7 +210,7 @@ export function GameResults({ players, winnerId, currentUserId, payouts }: GameR
                       </TableCell>
                       {rankings.map((player) => (
                         <TableCell key={player.userId} className="text-center text-white">
-                          {player.scoresheet[category] ?? '-'}
+                          {getCategoryScore(player.scoresheet, category)}
                         </TableCell>
                       ))}
                     </TableRow>

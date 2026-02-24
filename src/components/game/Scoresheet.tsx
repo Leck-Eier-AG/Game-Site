@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useTranslations } from 'next-intl'
-import type { PlayerState, DiceValues, ScoreCategory, KniffelRuleset } from '@/types/game'
+import type { PlayerState, DiceValues, ScoreCategory, KniffelRuleset, KniffelScoresheet } from '@/types/game'
 import { calculateScore, calculateScoreWithRuleset, calculateUpperBonus, calculateTotalScore } from '@/lib/game/kniffel-rules'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -40,21 +40,21 @@ export function Scoresheet({
 
   const maxRolls = ruleset?.maxRolls ?? 3
   const randomizerEnabled = ruleset?.categoryRandomizer?.enabled ?? false
-  const disabledCategories = new Set(
+  const disabledCategories = new Set<ScoreCategory>(
     randomizerEnabled ? ruleset?.categoryRandomizer?.disabledCategories ?? [] : []
   )
   const specialCategories = randomizerEnabled
     ? ruleset?.categoryRandomizer?.specialCategories ?? []
     : []
 
-  const upperCategories: ScoreCategory[] = [
+  const upperCategories: ScoreCategory[] = ([
     'ones', 'twos', 'threes', 'fours', 'fives', 'sixes'
-  ].filter(category => !disabledCategories.has(category))
+  ] as ScoreCategory[]).filter(category => !disabledCategories.has(category))
 
-  const lowerBaseCategories: ScoreCategory[] = [
+  const lowerBaseCategories: ScoreCategory[] = ([
     'threeOfKind', 'fourOfKind', 'fullHouse',
     'smallStraight', 'largeStraight', 'kniffel', 'chance'
-  ].filter(category => !disabledCategories.has(category))
+  ] as ScoreCategory[]).filter(category => !disabledCategories.has(category))
 
   const lowerCategories: ScoreCategory[] = [
     ...lowerBaseCategories,

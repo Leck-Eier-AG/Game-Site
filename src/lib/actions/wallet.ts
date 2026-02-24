@@ -25,6 +25,9 @@ import type { WalletWithUser, TransactionWithDetails, BalanceHistoryEntry } from
 interface ActionState {
   error?: string
   success?: boolean
+  transactionId?: string
+  toUserId?: string
+  amount?: number
 }
 
 /**
