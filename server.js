@@ -446,7 +446,7 @@ async function autoPlay(roomId, io) {
   const bestCategory = autoPickCategory(state.dice, currentPlayer.scoresheet, ruleset)
 
   // Apply scoring via state machine
-  const scoreAction = { type: 'CHOOSE_CATEGORY', category: bestCategory }
+  const scoreAction = { type: 'CHOOSE_CATEGORY', category: bestCategory, auto: true }
   const result = applyAction(state, scoreAction, currentPlayer.userId)
 
   if (result instanceof Error) {

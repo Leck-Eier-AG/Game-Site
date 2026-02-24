@@ -364,6 +364,31 @@ describe('autoPickCategory', () => {
     expect(result).toBeDefined()
     expect(getAvailableCategories(scoresheet)).toContain(result)
   })
+
+  it('picks lowest-penalty category when scratch disallowed and all available scores are zero', () => {
+    const dice: DiceValues = [1, 1, 2, 3, 5]
+    const ruleset: KniffelRuleset = {
+      preset: 'classic',
+      allowScratch: false,
+      strictStraights: false,
+      fullHouseUsesSum: false,
+      maxRolls: 3,
+      categoryRandomizer: {
+        enabled: true,
+        disabledCategories: [
+          'ones', 'twos', 'threes', 'fours', 'fives', 'sixes', 'chance'
+        ],
+        specialCategories: [],
+      },
+      speedMode: {
+        enabled: true,
+        autoScore: true,
+      },
+    }
+
+    const result = autoPickCategory(dice, {}, ruleset)
+    expect(result).toBe('threeOfKind')
+  })
 })
 
 describe('calculateTotalScore', () => {

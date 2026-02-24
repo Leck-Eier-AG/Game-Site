@@ -18,7 +18,7 @@ import { resolveKniffelRuleset } from './kniffel-ruleset'
 export type GameAction =
   | { type: 'PLAYER_READY' }
   | { type: 'ROLL_DICE'; keptDice: boolean[]; newDice: DiceValue[] }
-  | { type: 'CHOOSE_CATEGORY'; category: ScoreCategory }
+  | { type: 'CHOOSE_CATEGORY'; category: ScoreCategory; auto?: boolean }
   | { type: 'PLAYER_DISCONNECT'; userId: string }
   | { type: 'PLAYER_RECONNECT'; userId: string }
 
@@ -99,7 +99,7 @@ export function applyAction(
       return handleRollDice(state, userId, action.keptDice, action.newDice)
 
     case 'CHOOSE_CATEGORY':
-      return handleChooseCategory(state, userId, action.category)
+      return handleChooseCategory(state, userId, action.category, action.auto)
 
     case 'PLAYER_DISCONNECT':
       return handlePlayerDisconnect(state, action.userId)
@@ -254,7 +254,8 @@ function handleRollDice(
 function handleChooseCategory(
   state: GameState,
   userId: string,
-  category: ScoreCategory
+  category: ScoreCategory,
+  auto: boolean | undefined
 ): GameState | Error {
   // Must be in rolling phase
   if (state.phase !== 'rolling') {
@@ -298,7 +299,11 @@ function handleChooseCategory(
   const score = calculateScoreWithRuleset(category, state.dice, ruleset)
 
   if (!ruleset.allowScratch && score === 0) {
-    return new Error('Scratch not allowed')
+    if (auto && ruleset.speedMode.autoScore) {
+      // Allow auto-scoring a zero in speed mode
+    } else {
+      return new Error('Scratch not allowed')
+    }
   }
 
   // Update player's scoresheet

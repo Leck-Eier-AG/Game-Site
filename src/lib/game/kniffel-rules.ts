@@ -163,6 +163,11 @@ export function autoPickCategory(
       : calculateScore(category, dice)
   }))
 
+  const maxScore = Math.max(...scores.map(entry => entry.score))
+  if (ruleset && ruleset.speedMode.autoScore && !ruleset.allowScratch && maxScore === 0) {
+    return pickLowestPenaltyCategory(available)
+  }
+
   // Sort by score descending, prefer lower section on ties
   scores.sort((a, b) => {
     if (b.score !== a.score) {
@@ -288,4 +293,19 @@ function hasStrictLargeStraight(counts: Record<DiceValue, number>): boolean {
  */
 function sumDice(dice: DiceValues): number {
   return dice.reduce((sum, die) => sum + die, 0)
+}
+
+function pickLowestPenaltyCategory(categories: ScoreCategory[]): ScoreCategory {
+  const priority: ScoreCategory[] = [
+    'ones', 'twos', 'threes', 'fours', 'fives', 'sixes',
+    'threeOfKind', 'fourOfKind', 'fullHouse',
+    'smallStraight', 'largeStraight', 'kniffel', 'chance',
+    'twoPairs', 'allEven', 'sumAtLeast24'
+  ]
+
+  for (const category of priority) {
+    if (categories.includes(category)) return category
+  }
+
+  return categories[0]
 }
