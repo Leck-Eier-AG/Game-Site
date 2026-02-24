@@ -9,6 +9,8 @@ export interface KniffelRulesetOverridesInput {
   categoryRandomizerEnabled: boolean
   disabledCategories: KniffelRuleset['categoryRandomizer']['disabledCategories']
   specialCategories: KniffelRuleset['categoryRandomizer']['specialCategories']
+  draftEnabled?: boolean
+  duelEnabled?: boolean
 }
 
 const CLASSIC_RULESET: KniffelRuleset = {
@@ -89,6 +91,8 @@ export function buildKniffelRulesetOverrides(
     strictStraights: input.strictStraights,
     fullHouseUsesSum: input.fullHouseUsesSum,
     maxRolls: input.maxRolls,
+    draftEnabled: input.draftEnabled ?? false,
+    duelEnabled: input.duelEnabled ?? false,
     speedMode: {
       enabled: input.speedModeEnabled,
       autoScore: input.speedModeEnabled,

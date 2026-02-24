@@ -56,6 +56,8 @@ export function CreateRoomDialog({ open, onOpenChange }: CreateRoomDialogProps) 
   const [fullHouseUsesSum, setFullHouseUsesSum] = useState(false)
   const [maxRolls, setMaxRolls] = useState('3')
   const [speedModeEnabled, setSpeedModeEnabled] = useState(false)
+  const [draftEnabled, setDraftEnabled] = useState(false)
+  const [duelEnabled, setDuelEnabled] = useState(false)
   const [categoryRandomizerEnabled, setCategoryRandomizerEnabled] = useState(false)
   const [disabledCategories, setDisabledCategories] = useState<ScoreCategory[]>([])
   const [specialCategories, setSpecialCategories] = useState<ScoreCategory[]>([])
@@ -151,7 +153,9 @@ export function CreateRoomDialog({ open, onOpenChange }: CreateRoomDialogProps) 
           speedModeEnabled,
           categoryRandomizerEnabled,
           disabledCategories,
-          specialCategories
+          specialCategories,
+          draftEnabled,
+          duelEnabled
         })
         : undefined,
       maxPlayers: parseInt(maxPlayers, 10),
@@ -213,6 +217,8 @@ export function CreateRoomDialog({ open, onOpenChange }: CreateRoomDialogProps) 
         setFullHouseUsesSum(false)
         setMaxRolls('3')
         setSpeedModeEnabled(false)
+        setDraftEnabled(false)
+        setDuelEnabled(false)
         setCategoryRandomizerEnabled(false)
         setDisabledCategories([])
         setSpecialCategories([])
@@ -414,6 +420,34 @@ export function CreateRoomDialog({ open, onOpenChange }: CreateRoomDialogProps) 
                     />
                     <Label htmlFor="speedModeEnabled" className="text-gray-300">
                       Auto-Score bei Timeout
+                    </Label>
+                  </div>
+                </div>
+
+                <div className="space-y-2 border border-zinc-800 rounded-lg p-3">
+                  <p className="text-sm font-semibold text-white">Match Modes</p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="draftEnabled"
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={draftEnabled}
+                      onChange={(e) => setDraftEnabled(e.target.checked)}
+                    />
+                    <Label htmlFor="draftEnabled" className="text-gray-300">
+                      Draft Mode
+                    </Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="duelEnabled"
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={duelEnabled}
+                      onChange={(e) => setDuelEnabled(e.target.checked)}
+                    />
+                    <Label htmlFor="duelEnabled" className="text-gray-300">
+                      Duel Mode
                     </Label>
                   </div>
                 </div>
