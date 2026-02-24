@@ -86,10 +86,11 @@ export function TransferForm({
     if (state?.success) {
       toast.success('Transfer erfolgreich!')
       // Notify recipient via socket
-      if (socket && selectedRecipient) {
+      if (socket && state?.transactionId && state?.toUserId && state?.amount != null) {
         socket.emit('wallet:transfer-complete', {
-          toUserId: selectedRecipient.id,
-          amount: Number(amount) || 0,
+          transactionId: state.transactionId,
+          toUserId: state.toUserId,
+          amount: state.amount,
         })
       }
       // Reset form

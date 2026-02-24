@@ -803,9 +803,19 @@ app.prepare().then(() => {
     })
 
     // Handle transfer notification to recipient
-    socket.on('wallet:transfer-complete', async ({ toUserId, amount }) => {
+    socket.on('wallet:transfer-complete', async ({ transactionId, toUserId, amount }) => {
       try {
-        if (!toUserId || !amount) return
+        if (!transactionId || !toUserId || !amount) return
+
+        const transaction = await prisma.transaction.findUnique({
+          where: { id: transactionId },
+        })
+
+        if (!transaction) return
+        if (transaction.userId !== socket.data.userId) return
+        if (transaction.relatedUserId !== toUserId) return
+        if (transaction.type !== 'TRANSFER_SENT') return
+        if (transaction.amount !== amount) return
 
         // Look up recipient's new balance
         const wallet = await getWalletWithUser(toUserId)

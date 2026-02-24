@@ -162,7 +162,7 @@ export async function transferFunds(
     }
 
     // Perform transfer in single atomic transaction
-    await prisma.$transaction(async (tx) => {
+    const transferResult = await prisma.$transaction(async (tx) => {
       // 1. Check sender wallet exists and is not frozen
       const senderWallet = await tx.wallet.findUnique({ where: { userId: session.userId } })
       if (!senderWallet) throw new Error('Wallet nicht gefunden')
@@ -177,7 +177,7 @@ export async function transferFunds(
         data: { balance: { decrement: amount } },
       })
 
-      await tx.transaction.create({
+      const sentTransaction = await tx.transaction.create({
         data: {
           type: TransactionType.TRANSFER_SENT,
           amount,
@@ -220,13 +220,14 @@ export async function transferFunds(
           description: `Transfer von ${session.displayName}`,
         },
       })
+      return { sentTransactionId: sentTransaction.id }
     }, {
       isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       maxWait: 5000,
       timeout: 10000,
     })
 
-    return { success: true }
+    return { success: true, transactionId: transferResult.sentTransactionId, toUserId, amount }
   } catch (error) {
     console.error('Transfer funds error:', error)
     return {
