@@ -24,7 +24,7 @@ const dev = process.env.NODE_ENV !== 'production'
 const hostname = 'localhost'
 const port = 3000
 
-// Load .env and .env.local before accessing env vars
+// Load .env (primary) and .env.local (fallback) before accessing env vars
 loadEnvConfig(process.cwd())
 
 const app = next({ dev, hostname, port })

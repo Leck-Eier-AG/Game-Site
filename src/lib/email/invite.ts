@@ -20,7 +20,7 @@ export async function sendInviteEmail({
   // Check if Resend is configured
   if (!resend || !process.env.RESEND_API_KEY) {
     console.warn(
-      '⚠️ RESEND_API_KEY not configured. Email sending skipped. Set RESEND_API_KEY in .env.local to enable email sending.'
+      '⚠️ RESEND_API_KEY not configured. Email sending skipped. Set RESEND_API_KEY in .env (or .env.local for overrides) to enable email sending.'
     )
     return { success: false, error: 'Email service not configured' }
   }
