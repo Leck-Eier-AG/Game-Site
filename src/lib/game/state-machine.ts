@@ -18,7 +18,7 @@ import { resolveKniffelRuleset } from './kniffel-ruleset'
 export type GameAction =
   | { type: 'PLAYER_READY' }
   | { type: 'ROLL_DICE'; keptDice: boolean[]; newDice: DiceValue[] }
-  | { type: 'CHOOSE_CATEGORY'; category: ScoreCategory; auto?: boolean }
+  | { type: 'CHOOSE_CATEGORY'; category: ScoreCategory; auto?: boolean; columnIndex?: number }
   | { type: 'PLAYER_DISCONNECT'; userId: string }
   | { type: 'PLAYER_RECONNECT'; userId: string }
 
@@ -109,7 +109,7 @@ export function applyAction(
       return handleRollDice(state, userId, action.keptDice, action.newDice)
 
     case 'CHOOSE_CATEGORY':
-      return handleChooseCategory(state, userId, action.category, action.auto)
+      return handleChooseCategory(state, userId, action.category, action.auto, action.columnIndex)
 
     case 'PLAYER_DISCONNECT':
       return handlePlayerDisconnect(state, action.userId)
@@ -265,7 +265,8 @@ function handleChooseCategory(
   state: GameState,
   userId: string,
   category: ScoreCategory,
-  auto: boolean | undefined
+  auto: boolean | undefined,
+  columnIndex: number | undefined
 ): GameState | Error {
   // Must be in rolling phase
   if (state.phase !== 'rolling') {
@@ -280,6 +281,19 @@ function handleChooseCategory(
 
   const ruleset = state.ruleset || resolveKniffelRuleset('classic')
 
+  const currentScoresheet = currentPlayer.scoresheet
+  let targetScoresheet: KniffelScoresheet
+  let targetColumnIndex = 0
+  if ('columns' in currentScoresheet) {
+    targetColumnIndex = columnIndex ?? 0
+    targetScoresheet = currentScoresheet.columns[targetColumnIndex]
+    if (!targetScoresheet) {
+      return new Error('Invalid column')
+    }
+  } else {
+    targetScoresheet = currentScoresheet
+  }
+
   // Must have rolled at least once
   const maxRolls = ruleset.maxRolls || 3
   if (state.rollsRemaining === maxRolls) {
@@ -287,7 +301,7 @@ function handleChooseCategory(
   }
 
   // Category must not be scored yet
-  if (currentPlayer.scoresheet[category] !== undefined) {
+  if (targetScoresheet[category] !== undefined) {
     return new Error('Category already scored')
   }
 
@@ -318,13 +332,29 @@ function handleChooseCategory(
   }
 
   // Update player's scoresheet
+  let updatedScoresheet: PlayerState['scoresheet']
+  if ('columns' in currentScoresheet) {
+    const columns = currentScoresheet.columns.map((column, index) => {
+      if (index !== targetColumnIndex) {
+        return column
+      }
+      return {
+        ...column,
+        [category]: score
+      }
+    })
+    updatedScoresheet = { columns }
+  } else {
+    updatedScoresheet = {
+      ...currentScoresheet,
+      [category]: score
+    }
+  }
+
   const newPlayers = [...state.players]
   newPlayers[state.currentPlayerIndex] = {
     ...currentPlayer,
-    scoresheet: {
-      ...currentPlayer.scoresheet,
-      [category]: score
-    }
+    scoresheet: updatedScoresheet
   }
 
   const newState: GameState = {

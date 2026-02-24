@@ -303,6 +303,29 @@ describe('applyAction - CHOOSE_CATEGORY', () => {
     }
   })
 
+  it('scores category into chosen column', () => {
+    let state = createInitialState(
+      [
+        { userId: 'user1', displayName: 'Alice' },
+        { userId: 'user2', displayName: 'Bob' }
+      ],
+      { turnTimer: 60, afkThreshold: 3, kniffelPreset: 'triple' }
+    )
+
+    state = applyAction(state, { type: 'PLAYER_READY' }, 'user1') as GameState
+    state = applyAction(state, { type: 'PLAYER_READY' }, 'user2') as GameState
+    state = { ...state, dice: [1, 1, 1, 1, 1], rollsRemaining: 2 }
+
+    const action: GameAction = { type: 'CHOOSE_CATEGORY', category: 'ones', columnIndex: 1 }
+    const result = applyAction(state, action, 'user1')
+
+    expect(result).not.toBeInstanceOf(Error)
+    if (!(result instanceof Error)) {
+      const scoresheet = result.players[0].scoresheet as { columns: Record<string, number>[] }
+      expect(scoresheet.columns[1].ones).toBe(5)
+    }
+  })
+
   it('returns error if category already scored', () => {
     let state = createInitialState(
       [
