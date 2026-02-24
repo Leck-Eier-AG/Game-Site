@@ -36,6 +36,8 @@ export function createInitialState(
     teams?: TeamInfo[]
   }
 ): GameState {
+  const ruleset = resolveKniffelRuleset(settings.kniffelPreset || 'classic', settings.kniffelRuleset)
+
   const teamByUserId = new Map<string, string>()
   for (const team of settings.teams || []) {
     for (const memberUserId of team.memberUserIds) {
@@ -43,18 +45,26 @@ export function createInitialState(
     }
   }
 
+  const makeScoresheet = (): PlayerState['scoresheet'] => {
+    if (ruleset.columnCount > 1) {
+      return {
+        columns: Array.from({ length: ruleset.columnCount }, () => ({}))
+      }
+    }
+
+    return {}
+  }
+
   const playerStates: PlayerState[] = players.map(p => ({
     userId: p.userId,
     displayName: p.displayName,
     teamId: teamByUserId.get(p.userId),
-    scoresheet: {},
+    scoresheet: makeScoresheet(),
     isReady: false,
     isConnected: true,
     lastActivity: Date.now(),
     consecutiveInactive: 0
   }))
-
-  const ruleset = resolveKniffelRuleset(settings.kniffelPreset || 'classic', settings.kniffelRuleset)
 
   const maxRolls = ruleset.maxRolls || 3
 

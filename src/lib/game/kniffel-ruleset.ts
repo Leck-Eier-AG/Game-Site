@@ -43,7 +43,12 @@ const CLASSIC_RULESET: KniffelRuleset = {
 
 const PRESET_RULESETS: Record<KniffelPreset, KniffelRuleset> = {
   classic: CLASSIC_RULESET,
-  triple: { ...CLASSIC_RULESET, preset: 'triple' },
+  triple: {
+    ...CLASSIC_RULESET,
+    preset: 'triple',
+    columnCount: 3,
+    columnMultipliers: [1, 2, 3]
+  },
   draft: { ...CLASSIC_RULESET, preset: 'draft' },
   duel: { ...CLASSIC_RULESET, preset: 'duel' },
   daily: { ...CLASSIC_RULESET, preset: 'daily' },

@@ -47,6 +47,23 @@ describe('createInitialState', () => {
 
     expect(state.rollsRemaining).toBe(4)
   })
+
+  it('creates scoresheet columns for triple preset', () => {
+    const players = [
+      { userId: 'user1', displayName: 'Alice' },
+      { userId: 'user2', displayName: 'Bob' }
+    ]
+    const settings = {
+      turnTimer: 60,
+      afkThreshold: 3,
+      kniffelPreset: 'triple'
+    }
+
+    const state = createInitialState(players, settings)
+    const scoresheet = state.players[0].scoresheet as { columns: Record<string, unknown>[] }
+
+    expect(scoresheet.columns).toHaveLength(3)
+  })
 })
 
 describe('applyAction - PLAYER_READY', () => {

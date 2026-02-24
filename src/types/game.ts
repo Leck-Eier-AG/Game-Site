@@ -109,7 +109,7 @@ export interface PlayerState {
   userId: string
   displayName: string
   teamId?: string
-  scoresheet: KniffelScoresheet
+  scoresheet: KniffelScoresheet | { columns: KniffelScoresheet[] }
   isReady: boolean
   isConnected: boolean
   lastActivity: number // timestamp
