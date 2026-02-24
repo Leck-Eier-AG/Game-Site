@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import type { PlayerState } from '@/types/game'
 import { calculateTotalScore, calculateUpperBonus } from '@/lib/game/kniffel-rules'
+import { getResultsLowerCategories } from '@/lib/game/kniffel-categories'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -198,15 +199,7 @@ export function GameResults({ players, winnerId, currentUserId, payouts }: GameR
                   </TableRow>
 
                   {/* Lower Section */}
-                  {([
-                    'threeOfKind',
-                    'fourOfKind',
-                    'fullHouse',
-                    'smallStraight',
-                    'largeStraight',
-                    'kniffel',
-                    'chance'
-                  ] as const).map((category) => (
+                  {getResultsLowerCategories().map((category) => (
                     <TableRow key={category}>
                       <TableCell className="font-medium text-white">
                         {category === 'threeOfKind' && 'Dreierpasch'}
@@ -216,6 +209,9 @@ export function GameResults({ players, winnerId, currentUserId, payouts }: GameR
                         {category === 'largeStraight' && 'Große Straße'}
                         {category === 'kniffel' && 'Kniffel'}
                         {category === 'chance' && 'Chance'}
+                        {category === 'twoPairs' && 'Zwei Paare'}
+                        {category === 'allEven' && 'Alle Gerade'}
+                        {category === 'sumAtLeast24' && 'Summe ≥ 24'}
                       </TableCell>
                       {rankings.map((player) => (
                         <TableCell key={player.userId} className="text-center text-white">
