@@ -19,6 +19,8 @@ describe('buildKniffelRulesetOverrides', () => {
       strictStraights: true,
       fullHouseUsesSum: true,
       maxRolls: 4,
+      draftEnabled: false,
+      duelEnabled: false,
       speedMode: {
         enabled: true,
         autoScore: true,
