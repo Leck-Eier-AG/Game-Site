@@ -64,6 +64,24 @@ describe('createInitialState', () => {
 
     expect(scoresheet.columns).toHaveLength(3)
   })
+
+  it('initializes duel match state when duel enabled', () => {
+    const players = [
+      { userId: 'user1', displayName: 'Alice' },
+      { userId: 'user2', displayName: 'Bob' }
+    ]
+    const settings = {
+      turnTimer: 60,
+      afkThreshold: 3,
+      kniffelRuleset: { duelEnabled: true }
+    }
+
+    const state = createInitialState(players, settings)
+
+    expect(state.matchState?.mode).toBe('duel')
+    expect(state.matchState?.round).toBe(1)
+    expect(state.matchState?.roundWinners).toEqual([])
+  })
 })
 
 describe('applyAction - PLAYER_READY', () => {

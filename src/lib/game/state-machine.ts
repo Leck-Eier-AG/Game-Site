@@ -74,12 +74,16 @@ export function createInitialState(
   const jokersUsedThisTurnByUserId = ruleset.jokerCount > 0
     ? Object.fromEntries(players.map(player => [player.userId, 0]))
     : undefined
+  const matchState = ruleset.duelEnabled
+    ? { mode: 'duel' as const, round: 1, roundWinners: [] as string[] }
+    : undefined
 
   return {
     phase: 'waiting',
     kniffelMode: settings.kniffelMode || 'classic',
     ruleset,
     rulesVersion: 1,
+    matchState,
     modifiers: jokersByUserId
       ? { jokersByUserId, jokersUsedThisTurnByUserId }
       : undefined,
