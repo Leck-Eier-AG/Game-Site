@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Coins, Dices, CircleDot, Spade } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
@@ -356,100 +357,159 @@ export function CreateRoomDialog({ open, onOpenChange }: CreateRoomDialogProps) 
 
                 <div className="space-y-2 border border-zinc-800 rounded-lg p-3">
                   <p className="text-sm font-semibold text-white">Regel-Toggles</p>
-                  <div className="flex items-center gap-2">
-                    <input
-                      id="allowScratch"
-                      type="checkbox"
-                      className="h-4 w-4"
-                      checked={allowScratch}
-                      onChange={(e) => setAllowScratch(e.target.checked)}
-                    />
-                    <Label htmlFor="allowScratch" className="text-gray-300">
-                      Scratch erlauben
-                    </Label>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      id="strictStraights"
-                      type="checkbox"
-                      className="h-4 w-4"
-                      checked={strictStraights}
-                      onChange={(e) => setStrictStraights(e.target.checked)}
-                    />
-                    <Label htmlFor="strictStraights" className="text-gray-300">
-                      Strikte Straßen
-                    </Label>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      id="fullHouseSum"
-                      type="checkbox"
-                      className="h-4 w-4"
-                      checked={fullHouseUsesSum}
-                      onChange={(e) => setFullHouseUsesSum(e.target.checked)}
-                    />
-                    <Label htmlFor="fullHouseSum" className="text-gray-300">
-                      Full House = Summe
-                    </Label>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="maxRolls" className="text-gray-300">
-                      Max. Würfe
-                    </Label>
-                    <Select value={maxRolls} onValueChange={setMaxRolls}>
-                      <SelectTrigger id="maxRolls" className="bg-zinc-800 border-zinc-700 text-white">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="3">3</SelectItem>
-                        <SelectItem value="4">4 (Risk Roll)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="flex items-center gap-2">
+                          <input
+                            id="allowScratch"
+                            type="checkbox"
+                            className="h-4 w-4"
+                            checked={allowScratch}
+                            onChange={(e) => setAllowScratch(e.target.checked)}
+                          />
+                          <Label htmlFor="allowScratch" className="text-gray-300">
+                            Scratch erlauben
+                          </Label>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        Erlaubt es, eine Kategorie mit 0 Punkten zu streichen.
+                      </TooltipContent>
+                    </Tooltip>
+
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="flex items-center gap-2">
+                          <input
+                            id="strictStraights"
+                            type="checkbox"
+                            className="h-4 w-4"
+                            checked={strictStraights}
+                            onChange={(e) => setStrictStraights(e.target.checked)}
+                          />
+                          <Label htmlFor="strictStraights" className="text-gray-300">
+                            Strikte Straßen
+                          </Label>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        Kleine Straße nur 1-2-3-4-5, große Straße nur 2-3-4-5-6.
+                      </TooltipContent>
+                    </Tooltip>
+
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="flex items-center gap-2">
+                          <input
+                            id="fullHouseSum"
+                            type="checkbox"
+                            className="h-4 w-4"
+                            checked={fullHouseUsesSum}
+                            onChange={(e) => setFullHouseUsesSum(e.target.checked)}
+                          />
+                          <Label htmlFor="fullHouseSum" className="text-gray-300">
+                            Full House = Summe
+                          </Label>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        Full House zählt die Augensumme statt 25 Punkte.
+                      </TooltipContent>
+                    </Tooltip>
+
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="flex items-center gap-2">
+                          <Label htmlFor="maxRolls" className="text-gray-300">
+                            Max. Würfe
+                          </Label>
+                          <Select value={maxRolls} onValueChange={setMaxRolls}>
+                            <SelectTrigger id="maxRolls" className="bg-zinc-800 border-zinc-700 text-white">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="3">3</SelectItem>
+                              <SelectItem value="4">4 (Risk Roll)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        Wie oft pro Runde gewürfelt werden darf (3 oder 4).
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
 
                 <div className="space-y-2 border border-zinc-800 rounded-lg p-3">
                   <p className="text-sm font-semibold text-white">Speed Mode</p>
-                  <div className="flex items-center gap-2">
-                    <input
-                      id="speedModeEnabled"
-                      type="checkbox"
-                      className="h-4 w-4"
-                      checked={speedModeEnabled}
-                      onChange={(e) => setSpeedModeEnabled(e.target.checked)}
-                    />
-                    <Label htmlFor="speedModeEnabled" className="text-gray-300">
-                      Auto-Score bei Timeout
-                    </Label>
-                  </div>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="flex items-center gap-2">
+                          <input
+                            id="speedModeEnabled"
+                            type="checkbox"
+                            className="h-4 w-4"
+                            checked={speedModeEnabled}
+                            onChange={(e) => setSpeedModeEnabled(e.target.checked)}
+                          />
+                          <Label htmlFor="speedModeEnabled" className="text-gray-300">
+                            Auto-Score bei Timeout
+                          </Label>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        Wenn die Zeit abläuft, wird automatisch die beste Kategorie gewählt.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
 
                 <div className="space-y-2 border border-zinc-800 rounded-lg p-3">
                   <p className="text-sm font-semibold text-white">Match Modes</p>
-                  <div className="flex items-center gap-2">
-                    <input
-                      id="draftEnabled"
-                      type="checkbox"
-                      className="h-4 w-4"
-                      checked={draftEnabled}
-                      onChange={(e) => setDraftEnabled(e.target.checked)}
-                    />
-                    <Label htmlFor="draftEnabled" className="text-gray-300">
-                      Draft Mode
-                    </Label>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      id="duelEnabled"
-                      type="checkbox"
-                      className="h-4 w-4"
-                      checked={duelEnabled}
-                      onChange={(e) => setDuelEnabled(e.target.checked)}
-                    />
-                    <Label htmlFor="duelEnabled" className="text-gray-300">
-                      Duel Mode
-                    </Label>
-                  </div>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="flex items-center gap-2">
+                          <input
+                            id="draftEnabled"
+                            type="checkbox"
+                            className="h-4 w-4"
+                            checked={draftEnabled}
+                            onChange={(e) => setDraftEnabled(e.target.checked)}
+                          />
+                          <Label htmlFor="draftEnabled" className="text-gray-300">
+                            Draft Mode
+                          </Label>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        Nach jedem Wurf wird der Wurf in einer Draft-Phase beansprucht.
+                      </TooltipContent>
+                    </Tooltip>
+
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="flex items-center gap-2">
+                          <input
+                            id="duelEnabled"
+                            type="checkbox"
+                            className="h-4 w-4"
+                            checked={duelEnabled}
+                            onChange={(e) => setDuelEnabled(e.target.checked)}
+                          />
+                          <Label htmlFor="duelEnabled" className="text-gray-300">
+                            Duel Mode
+                          </Label>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        Best-of-N-Runden mit begrenztem Kategorien-Pool.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
 
                 <div className="space-y-2 border border-zinc-800 rounded-lg p-3">
