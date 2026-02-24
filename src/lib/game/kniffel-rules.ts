@@ -213,6 +213,20 @@ export function calculateTotalScore(scoresheet: KniffelScoresheet): number {
   return categorySum + bonus
 }
 
+export function calculateTotalScoreWithRuleset(
+  scoresheet: KniffelScoresheet | { columns: KniffelScoresheet[] },
+  ruleset: KniffelRuleset
+): number {
+  if ('columns' in scoresheet) {
+    return scoresheet.columns.reduce((sum, column, index) => {
+      const multiplier = ruleset.columnMultipliers[index] ?? 1
+      return sum + calculateTotalScore(column) * multiplier
+    }, 0)
+  }
+
+  return calculateTotalScore(scoresheet)
+}
+
 // Helper functions
 
 /**

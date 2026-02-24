@@ -7,6 +7,7 @@ import {
   calculateTotalScore,
   calculateScoreWithRuleset,
   getAvailableCategoriesWithRuleset,
+  calculateTotalScoreWithRuleset,
 } from '../kniffel-rules'
 
 describe('calculateScore', () => {
@@ -439,6 +440,63 @@ describe('calculateTotalScore', () => {
   })
 })
 
+describe('calculateTotalScoreWithRuleset', () => {
+  it('applies column multipliers in triple preset', () => {
+    const ruleset: KniffelRuleset = {
+      preset: 'triple',
+      allowScratch: true,
+      strictStraights: false,
+      fullHouseUsesSum: false,
+      maxRolls: 3,
+      columnCount: 3,
+      columnMultipliers: [1, 2, 3],
+      columnSelection: 'choose',
+      jokerCount: 0,
+      jokerMaxPerTurn: 0,
+      draftEnabled: false,
+      duelEnabled: false,
+      riskRollEnabled: false,
+      riskRollThreshold: 24,
+      dailyEnabled: false,
+      ladderEnabled: false,
+      constraintsEnabled: false,
+      rogueliteEnabled: false,
+      categoryRandomizer: {
+        enabled: false,
+        disabledCategories: [],
+        specialCategories: [],
+      },
+      speedMode: {
+        enabled: false,
+        autoScore: false,
+      },
+    }
+
+    const baseScoresheet: KniffelScoresheet = {
+      ones: 3,
+      twos: 6,
+      threes: 9,
+      fours: 12,
+      fives: 15,
+      sixes: 18,
+      threeOfKind: 20,
+      fourOfKind: 0,
+      fullHouse: 25,
+      smallStraight: 30,
+      largeStraight: 40,
+      kniffel: 50,
+      chance: 24,
+      twoPairs: null,
+      allEven: null,
+      sumAtLeast24: null,
+    }
+
+    const scoresheet = { columns: [baseScoresheet, baseScoresheet, baseScoresheet] }
+
+    expect(calculateTotalScoreWithRuleset(scoresheet, ruleset)).toBe(1722)
+  })
+})
+
 describe('calculateScoreWithRuleset', () => {
   const baseRuleset: KniffelRuleset = {
     preset: 'classic',
@@ -446,6 +504,19 @@ describe('calculateScoreWithRuleset', () => {
     strictStraights: false,
     fullHouseUsesSum: false,
     maxRolls: 3,
+    columnCount: 1,
+    columnMultipliers: [1],
+    columnSelection: 'choose',
+    jokerCount: 0,
+    jokerMaxPerTurn: 0,
+    draftEnabled: false,
+    duelEnabled: false,
+    riskRollEnabled: false,
+    riskRollThreshold: 24,
+    dailyEnabled: false,
+    ladderEnabled: false,
+    constraintsEnabled: false,
+    rogueliteEnabled: false,
     categoryRandomizer: {
       enabled: false,
       disabledCategories: [],
