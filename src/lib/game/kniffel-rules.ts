@@ -1,4 +1,4 @@
-import type { DiceValues, DiceValue, KniffelScoresheet, ScoreCategory } from '@/types/game'
+import type { DiceValues, DiceValue, KniffelScoresheet, ScoreCategory, KniffelRuleset } from '@/types/game'
 
 /**
  * Calculate the score for a given category and dice roll
@@ -52,6 +52,30 @@ export function calculateScore(category: ScoreCategory, dice: DiceValues): numbe
     default:
       return 0
   }
+}
+
+/**
+ * Calculate score with ruleset overrides
+ */
+export function calculateScoreWithRuleset(
+  category: ScoreCategory,
+  dice: DiceValues,
+  ruleset: KniffelRuleset
+): number {
+  if (category === 'fullHouse' && ruleset.fullHouseUsesSum) {
+    return isFullHouse(getDiceCounts(dice)) ? sumDice(dice) : 0
+  }
+
+  if (ruleset.strictStraights) {
+    if (category === 'smallStraight') {
+      return hasStrictSmallStraight(getDiceCounts(dice)) ? 30 : 0
+    }
+    if (category === 'largeStraight') {
+      return hasStrictLargeStraight(getDiceCounts(dice)) ? 40 : 0
+    }
+  }
+
+  return calculateScore(category, dice)
 }
 
 /**
@@ -204,6 +228,14 @@ function hasLargeStraight(counts: Record<DiceValue, number>): boolean {
   return patterns.some(pattern =>
     pattern.every(value => counts[value as DiceValue] >= 1)
   )
+}
+
+function hasStrictSmallStraight(counts: Record<DiceValue, number>): boolean {
+  return [1, 2, 3, 4, 5].every(value => counts[value as DiceValue] >= 1)
+}
+
+function hasStrictLargeStraight(counts: Record<DiceValue, number>): boolean {
+  return [2, 3, 4, 5, 6].every(value => counts[value as DiceValue] >= 1)
 }
 
 /**

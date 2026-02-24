@@ -11,7 +11,7 @@ import type {
   KniffelPreset,
   KniffelRuleset
 } from '@/types/game'
-import { calculateScore, calculateTotalScore } from './kniffel-rules'
+import { calculateScoreWithRuleset, calculateTotalScore } from './kniffel-rules'
 import { resolveKniffelRuleset } from './kniffel-ruleset'
 
 // Action types
@@ -275,7 +275,12 @@ function handleChooseCategory(
   }
 
   // Calculate score
-  const score = calculateScore(category, state.dice)
+  const ruleset = state.ruleset || resolveKniffelRuleset('classic')
+  const score = calculateScoreWithRuleset(category, state.dice, ruleset)
+
+  if (!ruleset.allowScratch && score === 0) {
+    return new Error('Scratch not allowed')
+  }
 
   // Update player's scoresheet
   const newPlayers = [...state.players]

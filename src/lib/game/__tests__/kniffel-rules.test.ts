@@ -1,10 +1,11 @@
-import type { DiceValues, KniffelScoresheet, ScoreCategory } from '@/types/game'
+import type { DiceValues, KniffelScoresheet, ScoreCategory, KniffelRuleset } from '@/types/game'
 import {
   calculateScore,
   getAvailableCategories,
   calculateUpperBonus,
   autoPickCategory,
   calculateTotalScore,
+  calculateScoreWithRuleset,
 } from '../kniffel-rules'
 
 describe('calculateScore', () => {
@@ -354,5 +355,40 @@ describe('calculateTotalScore', () => {
     }
     // Upper: 63 + bonus 35 = 98, Lower: 212, Total: 310
     expect(calculateTotalScore(scoresheet)).toBe(310)
+  })
+})
+
+describe('calculateScoreWithRuleset', () => {
+  const baseRuleset: KniffelRuleset = {
+    preset: 'classic',
+    allowScratch: true,
+    strictStraights: false,
+    fullHouseUsesSum: false,
+    maxRolls: 3,
+    categoryRandomizer: {
+      enabled: false,
+      disabledCategories: [],
+      specialCategories: [],
+    },
+    speedMode: {
+      enabled: false,
+      autoScore: false,
+    },
+  }
+
+  it('uses sum for full house when fullHouseUsesSum is true', () => {
+    const ruleset: KniffelRuleset = { ...baseRuleset, fullHouseUsesSum: true }
+    const dice = [2, 2, 2, 3, 3] as const
+
+    expect(calculateScoreWithRuleset('fullHouse', dice, ruleset)).toBe(12)
+  })
+
+  it('requires strict straight patterns when strictStraights is true', () => {
+    const ruleset: KniffelRuleset = { ...baseRuleset, strictStraights: true }
+
+    expect(calculateScoreWithRuleset('smallStraight', [1, 2, 3, 4, 5], ruleset)).toBe(30)
+    expect(calculateScoreWithRuleset('smallStraight', [2, 3, 4, 5, 6], ruleset)).toBe(0)
+    expect(calculateScoreWithRuleset('largeStraight', [2, 3, 4, 5, 6], ruleset)).toBe(40)
+    expect(calculateScoreWithRuleset('largeStraight', [1, 2, 3, 4, 5], ruleset)).toBe(0)
   })
 })
